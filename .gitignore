@@ -163,4 +163,5 @@ cython_debug/
 
 myvenv/
 .env
-*/__pycache__
+*/__pycache__/
+.DS_Store
