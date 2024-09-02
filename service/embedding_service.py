@@ -1,12 +1,9 @@
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sentence_transformers import SentenceTransformer
 import pandas as pd
 import numpy as np
 from collections import defaultdict
-from typing import List, Optional
-from db.dbConfig import DatabaseConfig
+from typing import List
 import json
 
 class EmbeddingService:
@@ -22,7 +19,7 @@ class EmbeddingService:
             """
             return pd.read_sql(query, db)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error fetching recent active members: {e}")
+            raise Exception(f"Error fetching recent active members: {e}")
 
     def fetch_member_action_data(self, db: Session, member_ids: List[int]):
         try:
@@ -33,20 +30,20 @@ class EmbeddingService:
             """
             return pd.read_sql(query, db)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error fetching member action data: {e}")
+            raise Exception(f"Error fetching member action data: {e}")
 
     def load_total_data(self):
         try:
             return pd.read_csv("dataframe/song_audio_data_22000.csv", encoding="utf-8-sig")
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error loading total data from CSV: {e}")
+            raise Exception(f"Error loading total data from CSV: {e}")
 
     def merge_data(self, member_action_data: pd.DataFrame, total_data: pd.DataFrame):
         try:
             member_action_data['song_info_id'] = member_action_data['song_info_id'].astype(float)
             return pd.merge(member_action_data, total_data, on='song_info_id', how='left')
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error merging data: {e}")
+            raise Exception(f"Error merging data: {e}")
 
     def calculate_user_preferences(self, group: pd.DataFrame, weights: dict):
         try:
@@ -76,7 +73,7 @@ class EmbeddingService:
 
             return genre_preference, year_preference, country_preference, singer_type_preference, ssss_preference, max_pitch_preference
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error calculating user preferences: {e}")
+            raise Exception(f"Error calculating user preferences: {e}")
 
     def create_user_preference_sentence(self, genre_pref, year_pref, country_pref, singer_type_pref, ssss_pref, max_pitch_pref):
         try:
@@ -108,13 +105,13 @@ class EmbeddingService:
 
             return " ".join(user_preferences_parts)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error creating user preference sentence: {e}")
+            raise Exception(f"Error creating user preference sentence: {e}")
 
     def embed_user_preferences(self, sentence: str):
         try:
             return self.model.encode(sentence)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error embedding user preferences: {e}")
+            raise Exception(f"Error embedding user preferences: {e}")
 
     def update_or_insert_user_profile(self, db: Session, member_id: int, embedding: np.ndarray):
         try:
@@ -138,13 +135,13 @@ class EmbeddingService:
 
                 db.commit()
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error updating or inserting user profile for member_id {member_id}: {e}")
+            raise Exception(f"Error updating or inserting user profile for member_id {member_id}: {e}")
 
     def hz_to_midi(self, hz: float):
         try:
             return 69 + 12 * np.log2(hz / 440.0)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error converting Hz to MIDI: {e}")
+            raise Exception(f"Error converting Hz to MIDI: {e}")
 
     def midi_to_note_octave(self, midi: float):
         try:
@@ -153,7 +150,7 @@ class EmbeddingService:
             octave = int(midi // 12) - 1
             return note_names[note], octave
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error converting MIDI to note and octave: {e}")
+            raise Exception(f"Error converting MIDI to note and octave: {e}")
 
     def convert_max_pitch_to_note_octave(self, max_pitch: float):
         try:
@@ -164,7 +161,7 @@ class EmbeddingService:
             else:
                 return None
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error converting max pitch to note and octave: {e}")
+            raise Exception(f"Error converting max pitch to note and octave: {e}")
 
     def convert_year_to_decade(self, year: int):
         try:
@@ -174,11 +171,11 @@ class EmbeddingService:
             else:
                 return None
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error converting year to decade: {e}")
+            raise Exception(f"Error converting year to decade: {e}")
 
     def get_top_n_preferences(self, preferences: dict, n=3):
         try:
             sorted_preferences = sorted(preferences.items(), key=lambda item: item[1], reverse=True)
             return [pref[0] for pref in sorted_preferences[:n]]
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error getting top {n} preferences: {e}")
+            raise Exception(f"Error getting top {n} preferences: {e}")

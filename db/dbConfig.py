@@ -1,5 +1,4 @@
 import pymysql
-from fastapi import FastAPI, HTTPException, Depends
 import os
 from dotenv import load_dotenv
 
@@ -7,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class DatabaseConfig:
-    def __init__(self, host, user, password, database, charset):
+    def __init__(self, host, user, password, database, charset='utf8mb4'):
         self.host = host
         self.user = user
         self.password = password
@@ -25,16 +24,16 @@ class DatabaseConfig:
             )
             return connection
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error connecting to the database: {e}")
-        
-# Dependency to get a DB connection
+            print(f"Error connecting to the database: {e}")
+            raise
+
+# DB 연결을 위한 함수
 def get_db():
     config = DatabaseConfig(
         host=os.getenv('DB_HOST'),
         user=os.getenv('DB_USER'),
         password=os.getenv('DB_PASSWORD'),
-        database=os.getenv('DB_DATABASE'),
-        charset='utf8mb4'
+        database=os.getenv('DB_DATABASE')
     )
     connection = config.connect()
     try:
