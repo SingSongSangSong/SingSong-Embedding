@@ -13,22 +13,22 @@ class EmbeddingService:
 
     def fetch_recent_active_members(self, db: Session):
         try:
-            query = """
+            query = text("""
             SELECT DISTINCT member_id
             FROM member_action
             WHERE created_at >= NOW() - INTERVAL 1 HOUR;
-            """
+            """)
             return pd.read_sql(query, db.connection())  # SQLAlchemy Session에서 connection() 메서드 사용
         except Exception as e:
             raise Exception(f"Error fetching recent active members: {e}")
 
     def fetch_member_action_data(self, db: Session, member_ids: List[int]):
         try:
-            query = f"""
+            query = text(f"""
             SELECT member_id, song_info_id, action_type, gender, birthyear, action_score, created_at
             FROM member_action
             WHERE member_id IN ({','.join(map(str, member_ids))});
-            """
+            """)
             return pd.read_sql(query, db.connection())
         except Exception as e:
             raise Exception(f"Error fetching member action data: {e}")
@@ -193,10 +193,10 @@ class EmbeddingService:
     def create_gender_based_profiles(self, db: Session):
         try:
             # Fetch all member actions from the database
-            query = """
+            query = text("""
             SELECT member_id, song_info_id, action_type, gender, birthyear, action_score, created_at
             FROM member_action;
-            """
+            """)
             member_action_data = pd.read_sql(query, db.connection())
 
             # Load total data (e.g., song features)
