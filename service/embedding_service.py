@@ -5,6 +5,7 @@ import numpy as np
 from collections import defaultdict
 from typing import List
 import json
+from sqlalchemy import text
 
 class EmbeddingService:
     def __init__(self, model_name: str):
@@ -115,25 +116,34 @@ class EmbeddingService:
 
     def update_or_insert_user_profile(self, db: Session, member_id: int, embedding: np.ndarray):
         try:
-            with db.connection().cursor() as cursor:
-                cursor.execute("SELECT COUNT(*) FROM user_profile WHERE member_id = %s", (member_id,))
-                profile_exists = cursor.fetchone()[0] > 0
+            # Check if the profile already exists
+            result = db.execute(
+                text("SELECT COUNT(*) FROM user_profile WHERE member_id = :member_id"),
+                {"member_id": member_id}
+            )
+            profile_exists = result.scalar() > 0
 
-                if profile_exists:
-                    update_query = """
-                    UPDATE user_profile
-                    SET embedding = %s
-                    WHERE member_id = %s
-                    """
-                    cursor.execute(update_query, (json.dumps(embedding.tolist()), member_id))
-                else:
-                    insert_query = """
-                    INSERT INTO user_profile (member_id, embedding)
-                    VALUES (%s, %s)
-                    """
-                    cursor.execute(insert_query, (member_id, json.dumps(embedding.tolist())))
+            if profile_exists:
+                # Update the existing profile
+                db.execute(
+                    text("""
+                        UPDATE user_profile
+                        SET embedding = :embedding
+                        WHERE member_id = :member_id
+                    """),
+                    {"embedding": json.dumps(embedding.tolist()), "member_id": member_id}
+                )
+            else:
+                # Insert a new profile
+                db.execute(
+                    text("""
+                        INSERT INTO user_profile (member_id, embedding)
+                        VALUES (:member_id, :embedding)
+                    """),
+                    {"member_id": member_id, "embedding": json.dumps(embedding.tolist())}
+                )
 
-                db.commit()
+            db.commit()  # Commit the transaction
         except Exception as e:
             raise Exception(f"Error updating or inserting user profile for member_id {member_id}: {e}")
 
@@ -179,3 +189,69 @@ class EmbeddingService:
             return [pref[0] for pref in sorted_preferences[:n]]
         except Exception as e:
             raise Exception(f"Error getting top {n} preferences: {e}")
+    
+    def create_gender_based_profiles(self, db: Session):
+        try:
+            # Fetch all member actions from the database
+            query = """
+            SELECT member_id, song_info_id, action_type, gender, birthyear, action_score, created_at
+            FROM member_action;
+            """
+            member_action_data = pd.read_sql(query, db.connection())
+
+            # Load total data (e.g., song features)
+            total_data = self.load_total_data()
+
+            # Merge member actions with total data
+            merged_data = self.merge_data(member_action_data, total_data)
+
+            # Create profiles by gender
+            genders = merged_data['gender'].unique()
+            weights = {'CLICK': 1, 'KEEP': 5}
+
+            for gender in genders:
+                gender_data = merged_data[merged_data['gender'] == gender]
+                grouped = gender_data.groupby('member_id')
+
+                # Initialize combined preferences for the gender
+                combined_genre_pref = defaultdict(float)
+                combined_year_pref = defaultdict(float)
+                combined_country_pref = defaultdict(float)
+                combined_singer_type_pref = defaultdict(float)
+                combined_ssss_pref = defaultdict(float)
+                combined_max_pitch_pref = defaultdict(float)
+
+                for _, group in grouped:
+                    genre_pref, year_pref, country_pref, singer_type_pref, ssss_pref, max_pitch_pref = self.calculate_user_preferences(group, weights)
+
+                    # Combine the preferences of all users of the same gender
+                    for k, v in genre_pref.items():
+                        combined_genre_pref[k] += v
+                    for k, v in year_pref.items():
+                        combined_year_pref[k] += v
+                    for k, v in country_pref.items():
+                        combined_country_pref[k] += v
+                    for k, v in singer_type_pref.items():
+                        combined_singer_type_pref[k] += v
+                    for k, v in ssss_pref.items():
+                        combined_ssss_pref[k] += v
+                    for k, v in max_pitch_pref.items():
+                        combined_max_pitch_pref[k] += v
+
+                # Create a sentence from combined preferences
+                user_preferences_sentence = self.create_user_preference_sentence(
+                    combined_genre_pref, combined_year_pref, combined_country_pref, combined_singer_type_pref, combined_ssss_pref, combined_max_pitch_pref
+                )
+
+                # Generate embedding for the gender profile
+                gender_embedding = self.embed_user_preferences(user_preferences_sentence)
+
+                # Use 0 for male and -1 for female as identifiers
+                gender_identifier = 0 if gender.lower() == 'male' else -1
+                
+                # Update or insert the gender profile in the database
+                self.update_or_insert_user_profile(db, gender_identifier, gender_embedding)
+                print(f"Profile for gender '{gender}' has been updated/inserted.")
+
+        except Exception as e:
+            raise Exception(f"Error creating gender-based profiles: {e}")

@@ -19,6 +19,9 @@ class UserProfileServicerImpl(UserProfileServicer):
         db = next(get_db())  # get_db는 generator이므로 next()로 세션을 얻습니다.
 
         try:
+            # 기본 성별별 유저 프로파일 생성
+            service.create_gender_based_profiles(db)
+
             # 최근 활성 멤버 가져오기
             recent_active_members = service.fetch_recent_active_members(db)
             member_count = recent_active_members.shape[0] if recent_active_members is not None else 0
