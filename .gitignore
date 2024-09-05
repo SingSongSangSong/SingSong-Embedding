@@ -165,3 +165,10 @@ myvenv/
 .env
 */__pycache__/
 .DS_Store
+
+#milvus test
+volumes/
+embedEtcd.yaml
+user.yaml
+song_info.csv
+with_ssss_22286_updated5.csv
