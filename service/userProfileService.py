@@ -80,35 +80,59 @@ class UserProfileService:
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_DATABASE")
         )
+    
+    # Function to create user profile collection in Milvus
+    def create_user_profile_collection(self):
+        """Create the user profile collection in Milvus if it doesn't exist."""
+        if not utility.has_collection(self.user_profile_collection_name):
+            logger.info(f"Creating collection {self.user_profile_collection_name} in Milvus...")
+            
+            # Define the schema for user profile collection
+            fields = [
+                FieldSchema(name="member_id", dtype=DataType.INT64, is_primary=True, auto_id=False),
+                FieldSchema(name="profile_vector", dtype=DataType.FLOAT_VECTOR, dim=384),  # Assuming 384-dim vector
+                FieldSchema(name="profile_string", dtype=DataType.VARCHAR, max_length=65535),
+            ]
+            
+            # Create the collection schema
+            schema = CollectionSchema(fields, "User profiles collection")
+            self.user_profile_collection = Collection(self.user_profile_collection_name, schema)
+            logger.info(f"Collection {self.user_profile_collection_name} created.")
+
+            # Create an index on the profile_vector field for similarity search
+            index_params = {
+                "index_type": "IVF_FLAT",  # Type of index (can also use IVF_SQ8, HNSW, etc.)
+                "metric_type": "COSINE",   # Metric to use for similarity
+                "params": {"nlist": 1024}  # Number of clusters (adjustable based on the data size)
+            }
+            self.user_profile_collection.create_index(field_name="profile_vector", index_params=index_params)
+            logger.info(f"Index created for profile_vector on collection {self.user_profile_collection_name}.")
+        else:
+            logger.info(f"Collection {self.user_profile_collection_name} already exists.")
+
 
     # Insert or update a user profile in the user_profile collection
-    def insert_or_update_user_profile(self, user_id, profile_vector, profile_string, recommended_songs, song_descriptions):
+    def insert_or_update_user_profile(self, member_id, profile_vector, profile_string):
         collection = Collection(self.user_profile_collection_name)
         collection.load()
 
         # Check if the user profile already exists
-        expr = f"user_id == {user_id}"
-        results = collection.query(expr=expr, output_fields=["user_id"])
+        expr = f"member_id == {member_id}"
+        results = collection.query(expr=expr, output_fields=["member_id"])
 
         if results:
             # If the profile exists, delete the old one before inserting the new one
-            logger.info(f"Updating existing profile for user {user_id}.")
+            logger.info(f"Updating existing profile for user {member_id}.")
             collection.delete(expr=expr)
-
-        # Convert recommended_songs and song_descriptions lists to comma-separated strings
-        recommended_songs_str = ",".join(map(str, recommended_songs))  # Convert list to comma-separated string
-        song_descriptions_str = ",".join(song_descriptions)  # Convert list to comma-separated string
 
         # Insert the new profile
         data = [
-            [user_id],                  # user_id
+            [member_id],                  # member_id
             [profile_vector],            # profile_vector
             [profile_string],            # profile_string
-            [recommended_songs_str],     # recommended_songs
-            [song_descriptions_str]      # song_descriptions
         ]
         collection.insert(data)
-        logger.info(f"Profile for user {user_id} inserted/updated successfully.")
+        logger.info(f"Profile for user {member_id} inserted/updated successfully.")
 
     # Normalize action scores to a range of 1 to 10
     def normalize_scores(self, scores):
@@ -127,7 +151,7 @@ class UserProfileService:
         return normalized_scores
 
     # 최근 하루 동안 활동한 유저 ID 조회
-    def fetch_recent_user_ids(self):
+    def fetch_recent_member_ids(self):
         logger.info("Fetching recent user IDs from the database...")
         cursor = self.db_connection.cursor()
 
@@ -139,15 +163,21 @@ class UserProfileService:
         """
         
         cursor.execute(query)
-        recent_user_ids = [row[0] for row in cursor.fetchall()]
+        recent_member_ids = [row[0] for row in cursor.fetchall()]
         
         cursor.close()
-        logger.info(f"Fetched {len(recent_user_ids)} recent user IDs.")
-        return recent_user_ids
+        logger.info(f"Fetched {len(recent_member_ids)} recent user IDs.")
+        return recent_member_ids
 
     # 특정 유저 ID들에 해당하는 song_id와 action_score를 조회
-    def fetch_user_actions_for_ids(self, user_ids):
-        logger.info(f"Fetching user actions for {len(user_ids)} users from the database...")
+    def fetch_user_actions_for_ids(self, member_ids):
+        logger.info(f"Fetching user actions for {len(member_ids)} users from the database...")
+
+        # Check if member_ids is empty and return early if so
+        if not member_ids:
+            logger.warning("No member IDs found. Skipping database query.")
+            return {}
+
         cursor = self.db_connection.cursor()
 
         # 특정 유저 ID들에 대한 song_id와 action_score 조회
@@ -156,17 +186,17 @@ class UserProfileService:
         FROM member_action
         WHERE member_id IN (%s)
         GROUP BY member_id, song_info_id
-        """ % ','.join(['%s'] * len(user_ids))
+        """ % ','.join(['%s'] * len(member_ids))
         
-        cursor.execute(query, tuple(user_ids))
+        cursor.execute(query, tuple(member_ids))
         user_actions = cursor.fetchall()
         
         user_data = {}
-        for user_id, song_id, score in user_actions:
-            if user_id not in user_data:
-                user_data[user_id] = {"song_ids": [], "scores": []}
-            user_data[user_id]["song_ids"].append(song_id)
-            user_data[user_id]["scores"].append(score)
+        for member_id, song_id, score in user_actions:
+            if member_id not in user_data:
+                user_data[member_id] = {"song_ids": [], "scores": []}
+            user_data[member_id]["song_ids"].append(song_id)
+            user_data[member_id]["scores"].append(score)
         
         cursor.close()
         logger.info(f"Fetched actions for {len(user_data)} users.")
@@ -224,30 +254,67 @@ class UserProfileService:
         logger.info("User profile embedded.")
         return embedding
 
-    # Milvus에서 유사한 노래 검색
-    def search_similar_songs(self, user_embedding, top_k=20):
-        logger.info("Searching for similar songs in Milvus...")
-        search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
-        
-        user_embedding = np.expand_dims(user_embedding, axis=0).astype(np.float32)
-        
-        search_results = self.collection.search(
-            data=user_embedding,  # 사용자 임베딩 벡터
-            anns_field="vector",  # 벡터 필드 이름
-            param=search_params,
-            limit=top_k,
-            output_fields=["song_info_id", "description"]
-        )
-        
-        logger.info(f"Found {len(search_results)} similar songs.")
-        return search_results
+    # 성별에 따른 전체 성향 조회
+    def fetch_gender_based_actions(self, gender):
+        logger.info(f"Fetching actions for all {gender} users from the database...")
+        cursor = self.db_connection.cursor()
 
-    # 전체 프로세스를 실행하는 함수
+        # 성별에 따른 모든 유저의 song_id와 action_score를 조회 (가정: member 테이블에 gender 필드 존재)
+        query = """
+        SELECT song_info_id, SUM(action_score) as total_score
+        FROM member_action
+        JOIN member ON member_action.member_id = member.member_id
+        WHERE member.gender = %s
+        GROUP BY song_info_id
+        """
+        
+        cursor.execute(query, (gender,))
+        gender_actions = cursor.fetchall()
+        
+        song_ids = []
+        scores = []
+
+        for song_id, total_score in gender_actions:
+            song_ids.append(song_id)
+            scores.append(total_score)
+        
+        cursor.close()
+        logger.info(f"Fetched {len(song_ids)} songs for {gender} users.")
+        return song_ids, scores
+
+    # 남성과 여성 전체 성향 벡터 생성 및 저장
+    def create_gender_profiles(self):
+        # 남성 전체 성향 (아이디 0)
+        logger.info("Creating profile for all male users...")
+        male_song_ids, male_scores = self.fetch_gender_based_actions("MALE")
+        male_profile = self.create_user_profile(male_song_ids, male_scores)
+        male_embedding = self.embed_user_profile(male_profile)
+        self.insert_or_update_user_profile(
+            member_id=0,  # 남성 아이디 0
+            profile_vector=male_embedding.tolist(),
+            profile_string=male_profile,
+        )
+
+        # 여성 전체 성향 (아이디 -1)
+        logger.info("Creating profile for all female users...")
+        female_song_ids, female_scores = self.fetch_gender_based_actions("FEMALE")
+        female_profile = self.create_user_profile(female_song_ids, female_scores)
+        female_embedding = self.embed_user_profile(female_profile)
+        self.insert_or_update_user_profile(
+            member_id=-1,  # 여성 아이디 -1
+            profile_vector=female_embedding.tolist(),
+            profile_string=female_profile,
+        )
+
+    # 전체 프로세스를 실행하는 함수 (성별 프로필 포함)
     def run(self):
         logger.info("Starting user profile creation and similar song search process...")
 
+        # Create the user profile collection if it doesn't exist
+        self.create_user_profile_collection()
+
         # Fetch recent user IDs
-        recent_user_ids = self.fetch_recent_user_ids()
+        recent_user_ids = self.fetch_recent_member_ids()
 
         # Fetch user actions for the fetched recent user IDs
         user_data = self.fetch_user_actions_for_ids(recent_user_ids)
@@ -256,35 +323,16 @@ class UserProfileService:
             # 1. 유저 프로파일 생성
             logger.info(f"Processing user {user_id}...")
             user_profile = self.create_user_profile(user_info["song_ids"], user_info["scores"])
-
             # 2. 유저 프로파일 임베딩
             user_embedding = self.embed_user_profile(user_profile)
-
-            # 3. 유사한 노래 검색
-            similar_songs = self.search_similar_songs(user_embedding)
-            recommended_song_ids = []
-            song_descriptions = []
-
             logger.info(f"User {user_id} - Similar Songs:")
-
-            # Iterate over each result, which contains a list of hits
-            for result in similar_songs:
-                for hit in result:
-                    song_info_id = hit.id  # Extract song ID
-                    distance = hit.distance  # Extract distance (similarity score)
-                    description = hit.entity.description  # Extract song description
-                    
-                    recommended_song_ids.append(song_info_id)  # Add song ID to recommendations
-                    song_descriptions.append(description)  # Add description to list
-                    logger.info(f"Song ID: {song_info_id}, Distance: {distance}, Description: {description}")
-
-            # 4. Insert or update user profile in Milvus, including song descriptions
+            # 3. Insert or update user profile in Milvus, including song descriptions
             self.insert_or_update_user_profile(
                 user_id=user_id,
                 profile_vector=user_embedding.tolist(),  # Convert to list before storing
                 profile_string=user_profile,
-                recommended_songs=recommended_song_ids,
-                song_descriptions=song_descriptions  # Pass the descriptions
             )
 
+        # 남성, 여성 성향 프로필 생성
+        self.create_gender_profiles()
         logger.info("User profile creation and song search process completed.")

@@ -14,7 +14,6 @@ class MilvusInsertService:
         self.host = host
         self.port = port
         self.collection = None
-        self.user_profile_collection_name = "user_profile"  # User Profile 컬렉션 이름 설정
 
     def connect_milvus(self):
         """Milvus에 연결하는 함수"""
@@ -40,40 +39,27 @@ class MilvusInsertService:
                 FieldSchema(name="MR", dtype=DataType.BOOL),
                 FieldSchema(name="ssss", dtype=DataType.VARCHAR, max_length=255),
                 FieldSchema(name="description", dtype=DataType.VARCHAR, max_length=65535),
+                FieldSchema(name="album", dtype=DataType.VARCHAR, max_length=255)
             ]
             
             schema = CollectionSchema(fields, "Collection of song vectors with metadata")
             self.collection = Collection(name=self.collection_name, schema=schema)
             print(f"Collection '{self.collection_name}' created.")
+
+            # 인덱스 생성
+            index_params = {
+                "index_type": "IVF_FLAT",
+                "metric_type": "COSINE",
+                "params": {"nlist": 1024}
+            }
+            self.collection.create_index(field_name="vector", index_params=index_params)
+            print(f"Index created for vector field in collection '{self.collection_name}'.")
+
+            # 데이터 변경 사항을 플러시
+            self.collection.flush()  
         else:
             self.collection = Collection(name=self.collection_name)
             print(f"Collection '{self.collection_name}' already exists.")
-
-    def ensure_user_profile_collection(self):
-        """Ensure the user_profile collection exists in Milvus, if not, create it"""
-        if not utility.has_collection(self.user_profile_collection_name):
-            logger.info(f"Creating collection {self.user_profile_collection_name} in Milvus...")
-            fields = [
-                FieldSchema(name="user_id", dtype=DataType.INT64, is_primary=True, auto_id=False),
-                FieldSchema(name="profile_vector", dtype=DataType.FLOAT_VECTOR, dim=384),  # Assuming 384-dim vector
-                FieldSchema(name="profile_string", dtype=DataType.VARCHAR, max_length=65535),
-                FieldSchema(name="recommended_songs", dtype=DataType.VARCHAR, max_length=1000),  # Store song IDs as a JSON string
-                FieldSchema(name="song_descriptions", dtype=DataType.VARCHAR, max_length=65535)  # Add song_descriptions as a field
-            ]
-            schema = CollectionSchema(fields, "User profiles collection")
-            collection = Collection(self.user_profile_collection_name, schema)
-            logger.info(f"Collection {self.user_profile_collection_name} created.")
-
-            # Create an index on the profile_vector field for searching
-            index_params = {
-                "index_type": "IVF_FLAT",  # Type of index (can also use IVF_SQ8, HNSW, etc.)
-                "metric_type": "COSINE",   # Metric to use for similarity
-                "params": {"nlist": 1024}  # Number of clusters (adjustable based on the data size)
-            }
-            collection.create_index(field_name="profile_vector", index_params=index_params)
-            logger.info(f"Index created for profile_vector on collection {self.user_profile_collection_name}.")
-        else:
-            logger.info(f"Collection {self.user_profile_collection_name} already exists.")
 
     def check_collection_entity_count(self):
         """컬렉션의 엔티티 수 확인"""
@@ -101,20 +87,49 @@ class MilvusInsertService:
 
     def load_and_preprocess_data(self, song_info_path, data_path):
         """데이터를 로드하고 전처리"""
+        # Load the CSV data
         song_info = pd.read_csv(song_info_path, encoding="utf-8-sig")
         data = pd.read_csv(data_path, encoding="utf-8-sig")
-        
+
+        # Merge the song_info and data on 'song_id'
         merged_data = pd.merge(data, song_info[['song_info_id', 'is_mr']], left_on='song_id', right_on='song_info_id', how='left')
+        
+        # Process the 'MR' column
         merged_data['MR'] = merged_data['is_mr'].astype(bool)
+        
+        # Drop rows where 'song_id' is missing
         merged_data.dropna(subset=["song_id"], inplace=True)
+
+        # Parse the 'year' column
         merged_data['year'] = merged_data['year'].apply(self.safe_parse_year).astype('Int64', errors='ignore')
 
-        # 필요한 리스트 필드 파싱
+        # Parse necessary list fields (e.g., 'mfcc_mean', 'chroma_stft', 'mel_spectrogram')
         merged_data['mfcc_mean_parsed'] = merged_data['mfcc_mean'].apply(self.parse_list_column)
         merged_data['chroma_stft_parsed'] = merged_data['chroma_stft'].apply(self.parse_list_column)
         merged_data['mel_spectrogram_parsed'] = merged_data['mel_spectrogram'].apply(self.parse_list_column)
-        
-        return merged_data
+
+        # Filter required columns for final CSV output
+        columns_to_save = [
+            'song_number', 'song_name', 'artist_name', 'album', 'genre', 'year', 
+            'country', 'singer_type', 'audio_file_url', 'max_pitch', 'ssss', 'MR', 
+            'song_info_id_x'
+        ]
+
+        # Create a new DataFrame with the selected columns
+        filtered_data = merged_data[columns_to_save]
+
+        # Rename the 'song_info_id_x' column to 'song_info_id'
+        filtered_data.rename(columns={'song_info_id_x': 'song_info_id'}, inplace=True)
+
+        # Handle missing values for 'year', 'genre', 'country', 'singer_type', 'album'
+        filtered_data['year'] = filtered_data['year'].apply(lambda x: int(x) if not pd.isna(x) else None).astype('Int64')
+        filtered_data['year'].fillna(0, inplace=True)
+        filtered_data['genre'].fillna("", inplace=True)
+        filtered_data['country'].fillna("", inplace=True)
+        filtered_data['singer_type'].fillna("", inplace=True)
+        filtered_data['album'].fillna("", inplace=True)
+
+        return filtered_data
 
     def generate_description(self, row):
         """노래 설명 생성"""
@@ -126,7 +141,7 @@ class MilvusInsertService:
         return description.strip()
 
     def generate_embeddings(self, merged_data, model):
-        """임베딩 생성"""
+        """임베딩 생성과 동시에 description 생성"""
         merged_data['description'] = merged_data.apply(self.generate_description, axis=1)
         merged_data['vector'] = merged_data['description'].apply(lambda x: model.encode(str(x)))
         return merged_data
@@ -149,6 +164,7 @@ class MilvusInsertService:
                 batch['MR'].tolist(),
                 batch['ssss'].tolist(),
                 batch['description'].tolist(),
+                batch['album'].tolist(),
             ]
             self.collection.insert(data)
             print(f"Inserted {i + len(batch)} documents into Milvus.")
@@ -156,9 +172,6 @@ class MilvusInsertService:
     def run(self, song_info_path, data_path):
         """Milvus에 데이터를 삽입하는 전체 프로세스 실행"""
         self.connect_milvus()
-
-        # User Profile Collection도 생성하는 부분 추가
-        self.ensure_user_profile_collection()
 
         # 컬렉션 생성 또는 로드
         self.create_collection_if_not_exists(dim=384)  # 임의로 384를 사용하지만 실제 벡터 크기는 임베딩 모델이 결정

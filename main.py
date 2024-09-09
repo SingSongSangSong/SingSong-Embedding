@@ -5,10 +5,10 @@ import subprocess
 from concurrent import futures
 from service.userProfileService import UserProfileService
 from service.milvusInsertService import MilvusInsertService
-from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 import logging
 import threading
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
+from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 
 
 # 로깅 설정
@@ -51,6 +51,8 @@ if __name__ == "__main__":
 
     # UserProfileService 인스턴스 생성
     user_profile_service = UserProfileService()
+    user_profile_service.create_user_profile_collection()
+    user_profile_service.create_gender_profiles()
 
     # gRPC 서버를 별도의 스레드에서 실행
     grpc_thread = threading.Thread(target=serve_grpc)

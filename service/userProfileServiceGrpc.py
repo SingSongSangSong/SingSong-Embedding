@@ -19,7 +19,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
 
     # memberId에 대한 유저 프로파일 조회
     def get_user_profile(self, member_id):
-        expr = f"user_id == {member_id}"
+        expr = f"member_id == {member_id}"
         profiles = self.profile_collection.query(expr=expr, output_fields=["profile_vector"])
         if profiles:
             return profiles[0]['profile_vector']  # vector를 반환
@@ -39,14 +39,14 @@ class UserProfileServiceGrpc(UserProfileServicer):
             limit=top_k,
             offset=offset,
             expr="MR == False",  # MR이 False인 항목만 검색
-            output_fields=["song_info_id", "song_name", "artist_name", "MR", "ssss", "audio_file_url"]
+            output_fields=["song_info_id", "song_name", "singer_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
         )
         
         return search_results
 
     # gRPC CreateUserProfile 메서드
     def CreateUserProfile(self, request, context):
-        logger.info(f"Received gRPC request to create user profile for memberId: {request.memberId}, page: {request.page}")
+        logger.info(f"Received gRPC request to create user profile for memberId: {request.memberId}, page: {request.page}, gender: {request.gender}")
 
         try:
             # 페이지당 항목 수
@@ -56,14 +56,26 @@ class UserProfileServiceGrpc(UserProfileServicer):
             # 유저 프로파일 조회
             user_vector = self.get_user_profile(request.memberId)
 
-            if user_vector:
-                # 유사도 기반 추천
-                logger.info(f"Found user profile for memberId: {request.memberId}")
-                search_results = self.recommend_similar_songs(user_vector, top_k=items_per_page, offset=offset)
-            else:
-                # 유저 프로파일이 없을 경우, 빈 응답 반환
-                logger.warning(f"No user profile found for memberId: {request.memberId}. Returning empty response.")
-                return ProfileResponse(similar_items=[])
+            if not user_vector:
+                # 멤버 ID에 해당하는 프로필이 없을 경우, gender 기반 기본 프로필 조회
+                logger.warning(f"No user profile found for memberId: {request.memberId}. Looking for gender-based default profile.")
+
+                # gender가 male이면 member_id=0, female이면 member_id=-1
+                if request.gender == 'MALE':
+                    logger.info("Fetching default profile for male users.")
+                    user_vector = self.get_user_profile(0)  # 남성 기본 프로파일
+                elif request.gender == 'FEMALE':
+                    logger.info("Fetching default profile for female users.")
+                    user_vector = self.get_user_profile(-1)  # 여성 기본 프로파일
+
+            # 기본 프로파일도 없을 경우 빈 응답 반환
+            if not user_vector:
+                logger.warning(f"No profile found for memberId: {request.memberId} or gender: {request.gender}. Returning empty response.")
+                return ProfileResponse(similarItems=[])
+
+            # 유사도 기반 추천
+            logger.info(f"Found user profile for memberId: {request.memberId} or gender: {request.gender}")
+            search_results = self.recommend_similar_songs(user_vector, top_k=items_per_page, offset=offset)
 
             # 결과를 gRPC 응답으로 변환
             similar_items = []
@@ -71,19 +83,21 @@ class UserProfileServiceGrpc(UserProfileServicer):
                 for hit in result:
                     logger.info(hit)
                     similar_items.append(SimilarItem(
-                        song_info_id=str(hit.id),  # song_info_id
-                        song_name=hit.entity.song_name,  # 노래 제목
-                        artist_name=hit.entity.artist_name,  # 아티스트 이름
-                        mr=hit.entity.MR,  # MR 여부
+                        songInfoId=hit.id,  # song_info_id
+                        songName=hit.entity.song_name,  # 노래 제목
+                        singerName=hit.entity.singer_name,  # 아티스트 이름
+                        isMr=hit.entity.MR,  # MR 여부
                         ssss=hit.entity.ssss,  # 추가 메타데이터 필드
-                        audio_file_url=hit.entity.audio_file_url,  # 오디오 파일 URL
-                        similarity_score=hit.distance  # 유사도 점수
+                        audioFileUrl=hit.entity.audio_file_url,  # 오디오 파일 URL
+                        album=hit.entity.album,  # 앨범 이름
+                        songNumber=hit.entity.song_number,  # 곡 번호
+                        similarityScore=hit.distance  # 유사도 점수
                     ))
 
-            return ProfileResponse(similar_items=similar_items)
+            return ProfileResponse(similarItems=similar_items)
 
         except Exception as e:
             logger.error(f"Error during user profile creation: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details("Internal server error")
-            return ProfileResponse(similar_items=[])
+            return ProfileResponse(similarItems=[])

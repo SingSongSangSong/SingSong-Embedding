@@ -2,7 +2,7 @@
 """Client and server classes corresponding to protobuf-defined services."""
 import grpc
 
-from proto.userProfileRecommend import userProfileRecommend_pb2 as proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2
+from proto.userProfileRecommend import userProfileRecommend_pb2 as userProfileRecommend_dot_userProfileRecommend__pb2
 
 
 class UserProfileStub(object):
@@ -17,8 +17,8 @@ class UserProfileStub(object):
         """
         self.CreateUserProfile = channel.unary_unary(
                 '/userProfileRecommend.UserProfile/CreateUserProfile',
-                request_serializer=proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2.ProfileRequest.SerializeToString,
-                response_deserializer=proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2.ProfileResponse.FromString,
+                request_serializer=userProfileRecommend_dot_userProfileRecommend__pb2.ProfileRequest.SerializeToString,
+                response_deserializer=userProfileRecommend_dot_userProfileRecommend__pb2.ProfileResponse.FromString,
                 )
 
 
@@ -37,8 +37,8 @@ def add_UserProfileServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'CreateUserProfile': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateUserProfile,
-                    request_deserializer=proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2.ProfileRequest.FromString,
-                    response_serializer=proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2.ProfileResponse.SerializeToString,
+                    request_deserializer=userProfileRecommend_dot_userProfileRecommend__pb2.ProfileRequest.FromString,
+                    response_serializer=userProfileRecommend_dot_userProfileRecommend__pb2.ProfileResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -63,7 +63,7 @@ class UserProfile(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/userProfileRecommend.UserProfile/CreateUserProfile',
-            proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2.ProfileRequest.SerializeToString,
-            proto_dot_userProfileRecommend_dot_userProfileRecommend__pb2.ProfileResponse.FromString,
+            userProfileRecommend_dot_userProfileRecommend__pb2.ProfileRequest.SerializeToString,
+            userProfileRecommend_dot_userProfileRecommend__pb2.ProfileResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
