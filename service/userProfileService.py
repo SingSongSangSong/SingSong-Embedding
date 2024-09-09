@@ -153,19 +153,39 @@ class UserProfileService:
         ]
         return normalized_scores
 
-    # 각 유저의 song_id와 action_score를 조회
-    def get_user_actions(self):
-        logger.info("Fetching user actions from the database...")
+    # 최근 하루 동안 활동한 유저 ID 조회
+    def fetch_recent_user_ids(self):
+        logger.info("Fetching recent user IDs from the database...")
         cursor = self.db_connection.cursor()
 
+        # 최근 하루 동안 활동한 유저들의 ID 조회
         query = """
-        SELECT member_id, song_info_id, SUM(action_score) as total_score
+        SELECT DISTINCT member_id
         FROM member_action
         WHERE CREATED_AT >= DATE_SUB(NOW(), INTERVAL 1 DAY)
-        GROUP BY member_id, song_info_id
         """
         
         cursor.execute(query)
+        recent_user_ids = [row[0] for row in cursor.fetchall()]
+        
+        cursor.close()
+        logger.info(f"Fetched {len(recent_user_ids)} recent user IDs.")
+        return recent_user_ids
+
+    # 특정 유저 ID들에 해당하는 song_id와 action_score를 조회
+    def fetch_user_actions_for_ids(self, user_ids):
+        logger.info(f"Fetching user actions for {len(user_ids)} users from the database...")
+        cursor = self.db_connection.cursor()
+
+        # 특정 유저 ID들에 대한 song_id와 action_score 조회
+        query = """
+        SELECT member_id, song_info_id, SUM(action_score) as total_score
+        FROM member_action
+        WHERE member_id IN (%s)
+        GROUP BY member_id, song_info_id
+        """ % ','.join(['%s'] * len(user_ids))
+        
+        cursor.execute(query, tuple(user_ids))
         user_actions = cursor.fetchall()
         
         user_data = {}
@@ -252,7 +272,12 @@ class UserProfileService:
     # 전체 프로세스를 실행하는 함수
     def run(self):
         logger.info("Starting user profile creation and similar song search process...")
-        user_data = self.get_user_actions()
+
+        # Fetch recent user IDs
+        recent_user_ids = self.fetch_recent_user_ids()
+
+        # Fetch user actions for the fetched recent user IDs
+        user_data = self.fetch_user_actions_for_ids(recent_user_ids)
 
         for user_id, user_info in user_data.items():
             # 1. 유저 프로파일 생성
