@@ -165,3 +165,8 @@ myvenv/
 .env
 */__pycache__/
 .DS_Store
+volumes
+embedEtcd.yaml
+user.yaml
+dataframe/*
+*.csv
