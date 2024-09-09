@@ -70,7 +70,6 @@ class UserProfileService:
 
         # Ensure the user profile collection exists in Milvus
         self.user_profile_collection_name = "user_profile"
-        self.ensure_user_profile_collection()
 
     # MySQL 연결 설정
     def connect_to_db(self):
@@ -81,32 +80,6 @@ class UserProfileService:
             password=os.getenv("DB_PASSWORD"),
             database=os.getenv("DB_DATABASE")
         )
-
-    # Ensure the user_profile collection exists in Milvus, if not, create it
-    def ensure_user_profile_collection(self):
-        if not utility.has_collection(self.user_profile_collection_name):
-            logger.info(f"Creating collection {self.user_profile_collection_name} in Milvus...")
-            fields = [
-                FieldSchema(name="user_id", dtype=DataType.INT64, is_primary=True, auto_id=False),
-                FieldSchema(name="profile_vector", dtype=DataType.FLOAT_VECTOR, dim=384),  # Assuming 384-dim vector
-                FieldSchema(name="profile_string", dtype=DataType.VARCHAR, max_length=65535),
-                FieldSchema(name="recommended_songs", dtype=DataType.VARCHAR, max_length=1000),  # Store song IDs as a JSON string
-                FieldSchema(name="song_descriptions", dtype=DataType.VARCHAR, max_length=65535)  # Add song_descriptions as a field
-            ]
-            schema = CollectionSchema(fields, "User profiles collection")
-            collection = Collection(self.user_profile_collection_name, schema)
-            logger.info(f"Collection {self.user_profile_collection_name} created.")
-
-            # Create an index on the profile_vector field for searching
-            index_params = {
-                "index_type": "IVF_FLAT",  # Type of index (can also use IVF_SQ8, HNSW, etc.)
-                "metric_type": "COSINE",   # Metric to use for similarity
-                "params": {"nlist": 1024}  # Number of clusters (adjustable based on the data size)
-            }
-            collection.create_index(field_name="profile_vector", index_params=index_params)
-            logger.info(f"Index created for profile_vector on collection {self.user_profile_collection_name}.")
-        else:
-            logger.info(f"Collection {self.user_profile_collection_name} already exists.")
 
     # Insert or update a user profile in the user_profile collection
     def insert_or_update_user_profile(self, user_id, profile_vector, profile_string, recommended_songs, song_descriptions):

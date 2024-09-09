@@ -5,8 +5,11 @@ import subprocess
 from concurrent import futures
 from service.userProfileService import UserProfileService
 from service.milvusInsertService import MilvusInsertService
+from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 import logging
 import threading
+from service.userProfileServiceGrpc import UserProfileServiceGrpc
+
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for more detailed output
@@ -16,6 +19,9 @@ logger = logging.getLogger(__name__)
 def serve_grpc():
     logger.info("Starting gRPC server in a separate thread...")
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+
+    add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), server)
+
     server.add_insecure_port('[::]:50051')
     server.start()
     logger.info("gRPC server started on port 50051")

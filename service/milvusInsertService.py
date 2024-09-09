@@ -2,6 +2,11 @@ import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from pymilvus import connections, FieldSchema, CollectionSchema, Collection, DataType, utility
+import logging
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class MilvusInsertService:
     def __init__(self, collection_name, host='localhost', port='19530'):
@@ -9,6 +14,7 @@ class MilvusInsertService:
         self.host = host
         self.port = port
         self.collection = None
+        self.user_profile_collection_name = "user_profile"  # User Profile 컬렉션 이름 설정
 
     def connect_milvus(self):
         """Milvus에 연결하는 함수"""
@@ -42,6 +48,32 @@ class MilvusInsertService:
         else:
             self.collection = Collection(name=self.collection_name)
             print(f"Collection '{self.collection_name}' already exists.")
+
+    def ensure_user_profile_collection(self):
+        """Ensure the user_profile collection exists in Milvus, if not, create it"""
+        if not utility.has_collection(self.user_profile_collection_name):
+            logger.info(f"Creating collection {self.user_profile_collection_name} in Milvus...")
+            fields = [
+                FieldSchema(name="user_id", dtype=DataType.INT64, is_primary=True, auto_id=False),
+                FieldSchema(name="profile_vector", dtype=DataType.FLOAT_VECTOR, dim=384),  # Assuming 384-dim vector
+                FieldSchema(name="profile_string", dtype=DataType.VARCHAR, max_length=65535),
+                FieldSchema(name="recommended_songs", dtype=DataType.VARCHAR, max_length=1000),  # Store song IDs as a JSON string
+                FieldSchema(name="song_descriptions", dtype=DataType.VARCHAR, max_length=65535)  # Add song_descriptions as a field
+            ]
+            schema = CollectionSchema(fields, "User profiles collection")
+            collection = Collection(self.user_profile_collection_name, schema)
+            logger.info(f"Collection {self.user_profile_collection_name} created.")
+
+            # Create an index on the profile_vector field for searching
+            index_params = {
+                "index_type": "IVF_FLAT",  # Type of index (can also use IVF_SQ8, HNSW, etc.)
+                "metric_type": "COSINE",   # Metric to use for similarity
+                "params": {"nlist": 1024}  # Number of clusters (adjustable based on the data size)
+            }
+            collection.create_index(field_name="profile_vector", index_params=index_params)
+            logger.info(f"Index created for profile_vector on collection {self.user_profile_collection_name}.")
+        else:
+            logger.info(f"Collection {self.user_profile_collection_name} already exists.")
 
     def check_collection_entity_count(self):
         """컬렉션의 엔티티 수 확인"""
@@ -125,24 +157,29 @@ class MilvusInsertService:
         """Milvus에 데이터를 삽입하는 전체 프로세스 실행"""
         self.connect_milvus()
 
-        # 데이터 로드 및 전처리
-        merged_data = self.load_and_preprocess_data(song_info_path, data_path)
-        
-        # 임베딩 모델 로드
-        model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-
-        # 임베딩 생성
-        merged_data = self.generate_embeddings(merged_data, model)
+        # User Profile Collection도 생성하는 부분 추가
+        self.ensure_user_profile_collection()
 
         # 컬렉션 생성 또는 로드
-        dim = len(merged_data['vector'].iloc[0])
-        self.create_collection_if_not_exists(dim)
+        self.create_collection_if_not_exists(dim=384)  # 임의로 384를 사용하지만 실제 벡터 크기는 임베딩 모델이 결정
 
         # 컬렉션에 20,000개 이상의 엔티티가 있는지 확인
         entity_count = self.check_collection_entity_count()
-        
+
         if entity_count == 0:
-            # 컬렉션에 엔티티가 없으면 데이터 삽입
+            # 컬렉션에 엔티티가 없으면 데이터 로드 및 임베딩 생성
+            print(f"No entities found in the collection. Proceeding with data loading and insertion.")
+            
+            # 데이터 로드 및 전처리
+            merged_data = self.load_and_preprocess_data(song_info_path, data_path)
+            
+            # 임베딩 모델 로드
+            model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+            # 임베딩 생성
+            merged_data = self.generate_embeddings(merged_data, model)
+
+            # 데이터 삽입
             self.insert_into_milvus(merged_data)
             self.collection.flush()
             print(f"Data successfully inserted and flushed to Milvus collection '{self.collection_name}'.")
