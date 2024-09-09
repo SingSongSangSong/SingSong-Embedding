@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  milvus-standalone:
+    image: milvusdb/milvus:v2.4.5
+    container_name: milvus-standalone
+    environment:
+      - ETCD_USE_EMBED=true
+      - ETCD_DATA_DIR=/var/lib/milvus/etcd
+      - ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml
+      - COMMON_STORAGETYPE=local
+    volumes:
+      - ./volumes/milvus:/var/lib/milvus
+      - ./embedEtcd.yaml:/milvus/configs/embedEtcd.yaml
+      - ./user.yaml:/milvus/configs/user.yaml
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+      - "2379:2379"
+    security_opt:
+      - seccomp:unconfined
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+
+  attu:
+    image: zilliz/attu:latest
+    container_name: attu
+    environment:
+      - HOST_URL=http://localhost:8000  # Milvus의 URL을 명시
+      - MILVUS_URL=milvus-standalone:19530  # Milvus의 IP 및 포트 연결
+    depends_on:
+      - milvus-standalone
+    ports:
+      - "3000:3000"  # Attu의 웹 UI가 로컬 8000 포트로 제공됨
+    restart: unless-stopped
+
+volumes:
+  milvus-data:
+    driver: local
