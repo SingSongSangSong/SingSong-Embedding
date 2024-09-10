@@ -80,7 +80,7 @@ jobs:
           export LANGCHAINPROJECT=$LANGCHAINPROJECT
   
           # Run the script with the Docker image parameter
-          /home/sunwupark/Downloads/Singsong/python_grpc_with_milvus.sh $DOCKER_IMAGE
+          nohup /home/sunwupark/Downloads/Singsong/python_grpc_with_milvus.sh $DOCKER_IMAGE
   
           echo "Docker update script executed successfully."
           EOF
