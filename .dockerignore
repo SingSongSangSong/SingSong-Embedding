@@ -6,3 +6,5 @@ milvus_data_insert.py
 milvus-docker-compose.yml
 README.md
 client_test.py
+.github/*
+.gitignore
