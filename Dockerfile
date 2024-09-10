@@ -26,6 +26,7 @@ ARG S3_BUCKET_NAME
 ENV AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
 ENV AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
 ENV AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+ENV S3_BUCKET_NAME=${S3_BUCKET_NAME}
 
 # Download the CSV files from S3 during the build process
 RUN aws s3 cp s3://${S3_BUCKET_NAME}/song_info.csv /app/dataframe/song_info.csv
