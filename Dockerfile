@@ -20,6 +20,7 @@ RUN mkdir -p /app/dataframe
 ARG AWS_ACCESS_KEY_ID
 ARG AWS_SECRET_ACCESS_KEY
 ARG AWS_DEFAULT_REGION
+ARG S3_BUCKET_NAME
 
 # Set AWS credentials as environment variables inside the build process
 ENV AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
