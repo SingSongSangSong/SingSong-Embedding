@@ -39,7 +39,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
             limit=top_k,
             offset=offset,
             expr="MR == False",  # MR이 False인 항목만 검색
-            output_fields=["song_info_id", "song_name", "singer_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
+            output_fields=["song_info_id", "song_name", "artist_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
         )
         
         return search_results
@@ -85,7 +85,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
                     similar_items.append(SimilarItem(
                         songInfoId=hit.id,  # song_info_id
                         songName=hit.entity.song_name,  # 노래 제목
-                        singerName=hit.entity.singer_name,  # 아티스트 이름
+                        singerName=hit.entity.artist_name,  # 아티스트 이름
                         isMr=hit.entity.MR,  # MR 여부
                         ssss=hit.entity.ssss,  # 추가 메타데이터 필드
                         audioFileUrl=hit.entity.audio_file_url,  # 오디오 파일 URL
