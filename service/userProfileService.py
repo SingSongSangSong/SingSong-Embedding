@@ -37,7 +37,7 @@ class UserProfileService:
 
         # Connect to MySQL and Milvus
         self.db_connection = self.connect_to_db()
-        connections.connect(alias="default", host="localhost", port="19530")
+        connections.connect(alias="default", host="milvus-standalone", port="19530")
         self.collection = Collection("singsongsangsong_22286")
 
         # Embedding model for user profiles

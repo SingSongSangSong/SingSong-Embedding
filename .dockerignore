@@ -3,4 +3,6 @@ myvenv
 .DS_Store
 */__pycache__/
 milvus_data_insert.py
-with_ssss_22286_updated5.csv
+milvus-docker-compose.yml
+README.md
+client_test.py

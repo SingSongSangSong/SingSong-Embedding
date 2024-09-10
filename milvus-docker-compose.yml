@@ -1,44 +1,78 @@
-version: '3.8'
+version: '3.5'
 
 services:
-  milvus-standalone:
-    image: milvusdb/milvus:v2.4.5
-    container_name: milvus-standalone
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.5
     environment:
-      - ETCD_USE_EMBED=true
-      - ETCD_DATA_DIR=/var/lib/milvus/etcd
-      - ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml
-      - COMMON_STORAGETYPE=local
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
     volumes:
-      - ./volumes/milvus:/var/lib/milvus
-      - ./embedEtcd.yaml:/milvus/configs/embedEtcd.yaml
-      - ./user.yaml:/milvus/configs/user.yaml
-    ports:
-      - "19530:19530"
-      - "9091:9091"
-      - "2379:2379"
-    security_opt:
-      - seccomp:unconfined
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      test: ["CMD", "etcdctl", "endpoint", "health"]
       interval: 30s
       timeout: 20s
       retries: 3
+
+  minio:
+    container_name: milvus-minio
+    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus-standalone:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.4.10
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
       start_period: 90s
-    restart: unless-stopped
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    depends_on:
+      - "etcd"
+      - "minio"
 
   attu:
     image: zilliz/attu:latest
     container_name: attu
     environment:
-      - HOST_URL=http://localhost:8000  # Milvus의 URL을 명시
+      - HOST_URL=http://localhost:3000
       - MILVUS_URL=milvus-standalone:19530  # Milvus의 IP 및 포트 연결
     depends_on:
       - milvus-standalone
     ports:
-      - "3000:3000"  # Attu의 웹 UI가 로컬 8000 포트로 제공됨
+      - "3000:3000"
     restart: unless-stopped
 
-volumes:
-  milvus-data:
-    driver: local
+networks:
+  default:
+    name: milvus_network
+    driver: bridge

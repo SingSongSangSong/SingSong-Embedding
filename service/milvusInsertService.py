@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from pymilvus import connections, FieldSchema, CollectionSchema, Collection, DataType, utility
+from pymilvus import connections, FieldSchema, CollectionSchema, Collection, DataType, utility, MilvusException
+import time
 import logging
 
 # 로깅 설정
@@ -9,21 +10,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MilvusInsertService:
-    def __init__(self, collection_name, host='localhost', port='19530'):
+    def __init__(self, collection_name, host='milvus-standalone', port='19530'):
         self.collection_name = collection_name
         self.host = host
         self.port = port
         self.collection = None
 
-    def connect_milvus(self):
+    def connect_milvus(self, retries=5, delay=10):
         """Milvus에 연결하는 함수"""
-        connections.connect(alias="default", host=self.host, port=self.port)
-        print(f"Connected to Milvus at {self.host}:{self.port}")
+        for attempt in range(retries):
+            try:
+                # 포트를 생략하고 호스트만으로 연결
+                connections.connect(alias="default", host=self.host)
+                logger.info(f"Connected to Milvus at {self.host}")
+                return
+            except MilvusException as e:
+                logger.info(f"Failed to connect to Milvus (attempt {attempt+1}/{retries}): {e}")
+                time.sleep(delay)
+        raise Exception(f"Could not connect to Milvus after {retries} attempts")
 
     def create_collection_if_not_exists(self, dim):
         """Milvus 컬렉션이 존재하는지 확인하고, 없으면 생성"""
         if not utility.has_collection(self.collection_name):
-            print(f"Collection '{self.collection_name}' does not exist. Creating collection.")
+            logger.info(f"Collection '{self.collection_name}' does not exist. Creating collection.")
             
             fields = [
                 FieldSchema(name="song_info_id", dtype=DataType.INT64, is_primary=True, auto_id=False),
@@ -44,7 +53,7 @@ class MilvusInsertService:
             
             schema = CollectionSchema(fields, "Collection of song vectors with metadata")
             self.collection = Collection(name=self.collection_name, schema=schema)
-            print(f"Collection '{self.collection_name}' created.")
+            logger.info(f"Collection '{self.collection_name}' created.")
 
             # 인덱스 생성
             index_params = {
@@ -53,19 +62,19 @@ class MilvusInsertService:
                 "params": {"nlist": 1024}
             }
             self.collection.create_index(field_name="vector", index_params=index_params)
-            print(f"Index created for vector field in collection '{self.collection_name}'.")
+            logger.info(f"Index created for vector field in collection '{self.collection_name}'.")
 
             # 데이터 변경 사항을 플러시
             self.collection.flush()  
         else:
             self.collection = Collection(name=self.collection_name)
-            print(f"Collection '{self.collection_name}' already exists.")
+            logger.info(f"Collection '{self.collection_name}' already exists.")
 
     def check_collection_entity_count(self):
         """컬렉션의 엔티티 수 확인"""
         self.collection.load()
         entity_count = self.collection.num_entities
-        print(f"Collection '{self.collection.name}' has {entity_count} entities.")
+        logger.info(f"Collection '{self.collection.name}' has {entity_count} entities.")
         return entity_count
 
     def safe_parse_year(self, value):
@@ -82,7 +91,7 @@ class MilvusInsertService:
         try:
             return np.array(eval(col), dtype=np.float32)
         except Exception as e:
-            print(f"Error parsing list in column: {col}, Error: {e}")
+            logger.info(f"Error parsing list in column: {col}, Error: {e}")
             return np.array([], dtype=np.float32)
 
     def load_and_preprocess_data(self, song_info_path, data_path):
@@ -167,7 +176,7 @@ class MilvusInsertService:
                 batch['album'].tolist(),
             ]
             self.collection.insert(data)
-            print(f"Inserted {i + len(batch)} documents into Milvus.")
+            logger.info(f"Inserted {i + len(batch)} documents into Milvus.")
 
     def run(self, song_info_path, data_path):
         """Milvus에 데이터를 삽입하는 전체 프로세스 실행"""
@@ -181,7 +190,7 @@ class MilvusInsertService:
 
         if entity_count == 0:
             # 컬렉션에 엔티티가 없으면 데이터 로드 및 임베딩 생성
-            print(f"No entities found in the collection. Proceeding with data loading and insertion.")
+            logger.info(f"No entities found in the collection. Proceeding with data loading and insertion.")
             
             # 데이터 로드 및 전처리
             merged_data = self.load_and_preprocess_data(song_info_path, data_path)
@@ -195,6 +204,6 @@ class MilvusInsertService:
             # 데이터 삽입
             self.insert_into_milvus(merged_data)
             self.collection.flush()
-            print(f"Data successfully inserted and flushed to Milvus collection '{self.collection_name}'.")
+            logger.info(f"Data successfully inserted and flushed to Milvus collection '{self.collection_name}'.")
         else:
-            print(f"Collection '{self.collection_name}' already has {entity_count} entities, skipping data insertion.")
+            logger.info(f"Collection '{self.collection_name}' already has {entity_count} entities, skipping data insertion.")
