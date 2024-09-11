@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MilvusInsertService:
-    def __init__(self, collection_name, host='localhost', port='19530'):
+    def __init__(self, collection_name, host='milvus-standalone', port='19530'):
         self.collection_name = collection_name
         self.host = host
         self.port = port

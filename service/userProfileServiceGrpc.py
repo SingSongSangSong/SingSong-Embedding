@@ -12,7 +12,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
     def __init__(self, user_profile_service):
         self.user_profile_service = user_profile_service
         # Milvus 연결
-        connections.connect(alias="default", host="localhost", port="19530")
+        connections.connect(alias="default", host="milvus-standalone", port="19530")
         self.song_collection = Collection("singsongsangsong_22286")
         self.profile_collection = Collection("user_profile")
 
