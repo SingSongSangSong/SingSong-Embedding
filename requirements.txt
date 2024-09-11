@@ -1,10 +1,10 @@
 pandas
 numpy
-sentence-transformers
 pymilvus
 pymysql
 langchain-openai
 langchain-core
+langchain-community
 langchain-milvus
 grpcio
 protobuf

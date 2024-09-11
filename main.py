@@ -8,7 +8,9 @@ from service.milvusInsertService import MilvusInsertService
 import logging
 import threading
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
+from service.langchainServiceGrpc import LangChainServiceGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
+from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
 
 
 # 로깅 설정
@@ -21,6 +23,7 @@ def serve_grpc():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), server)
+    add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), server)
 
     server.add_insecure_port('[::]:50051')
     server.start()

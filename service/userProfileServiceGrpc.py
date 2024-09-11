@@ -11,9 +11,8 @@ logger = logging.getLogger(__name__)
 class UserProfileServiceGrpc(UserProfileServicer):
     def __init__(self, user_profile_service):
         self.user_profile_service = user_profile_service
-
         # Milvus 연결
-        connections.connect(alias="default", host="milvus-standalone", port="19530")
+        connections.connect(alias="default", host="localhost", port="19530")
         self.song_collection = Collection("singsongsangsong_22286")
         self.profile_collection = Collection("user_profile")
 
@@ -41,13 +40,11 @@ class UserProfileServiceGrpc(UserProfileServicer):
             expr="MR == False",  # MR이 False인 항목만 검색
             output_fields=["song_info_id", "song_name", "artist_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
         )
-        
         return search_results
 
     # gRPC CreateUserProfile 메서드
     def CreateUserProfile(self, request, context):
         logger.info(f"Received gRPC request to create user profile for memberId: {request.memberId}, page: {request.page}, gender: {request.gender}")
-
         try:
             # 페이지당 항목 수
             items_per_page = 20
