@@ -49,17 +49,15 @@ class HotTrendingSchedulingService:
             )
             rdb.ping()
             logger.info("Redis 연결 성공")
-            print("redis 연결 됨.")
         except redis.ConnectionError as e:
             logger.error(f"Redis 연결 실패: {e}")
             raise
 
         logger.info("MySQL 및 Redis 연결 성공")
 
-        print(rdb.info())
         return db, rdb
 
-    # V1: 남성 전체, 여성 전체
+    # V1: 남성 전체, 여성 전체 - live 없음
     def v1_scheduler(self):
         try:
             cursor = self.db.cursor()
@@ -183,19 +181,99 @@ class HotTrendingSchedulingService:
 
             new_formatted_string_for_male = formatted_string_for_one_hour_later + "_MALE"
             self.rdb.set(new_formatted_string_for_male, json.dumps(male_results))
-            self.rdb.expire(new_formatted_string_for_male, 3910)
+            self.rdb.expire(new_formatted_string_for_male, 4210)
 
             new_formatted_string_for_female = formatted_string_for_one_hour_later + "_FEMALE"
             self.rdb.set(new_formatted_string_for_female, json.dumps(female_results))
-            self.rdb.expire(new_formatted_string_for_female, 3910)
+            self.rdb.expire(new_formatted_string_for_female, 4210)
 
         except Exception as e:
             print("실패")
             logger.error(f"실행 중 오류 발생: {e}")
+
+
+
         
-    # V2
+    # V2 - db에 live 추가하면 변경 필요
     # 성별미정 전체, 10대, 20대, 30대, 40대 이상
     # 남성 전체, 10대, 20대, 30대, 40대 이상
     # 여성 전체, 10대, 20대, 30대, 40대 이상
     def v2_scheduler(self):
-        print("성공!")
+        cursor = self.db.cursor()
+        cursor.execute("""     
+            WITH scored_songs AS (
+                SELECT
+                    ma.song_info_id,
+                    SUM(ma.action_score) AS total_score,
+                    ma.gender,
+                    CASE
+                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
+                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
+                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
+                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
+                    END AS age_group
+                FROM member_action as ma
+                WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                GROUP BY ma.song_info_id, ma.gender, age_group
+            )
+            SELECT
+                ss.song_info_id,
+                ss.total_score,
+                s.song_name,
+                s.artist_name,
+                s.song_number,
+                s.is_mr,
+                ss.gender,
+                ss.age_group
+            FROM scored_songs ss
+            JOIN song_info s ON ss.song_info_id = s.song_info_id
+        """)
+        results = cursor.fetchall()
+
+        # 성별 및 나이대별로 데이터를 분류하기 위한 저장소
+        male_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+        female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+        mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+
+        # 데이터를 성별 및 나이대에 맞게 분류
+        for row in results:
+            gender = row['gender']
+            age_group = row['age_group']
+            if gender == 'MALE':
+                male_data['ALL'].append(row)
+                male_data[age_group].append(row)
+            elif gender == 'FEMALE':
+                female_data['ALL'].append(row)
+                female_data[age_group].append(row)
+
+        # 성별미정 데이터는 남성과 여성 데이터를 합친 것
+        for age_group in mixed_data.keys():
+            mixed_data[age_group] = male_data[age_group] + female_data[age_group]
+
+        # Redis에 저장할 키 생성
+        seoul_tz = ZoneInfo('Asia/Seoul')
+        now = datetime.now(seoul_tz)
+        one_hour_later = now + timedelta(hours=1)
+        formatted_string_for_one_hour_later = one_hour_later.strftime("%Y-%m-%d-%H-Hot_Trend")
+
+        # Redis에 저장 (남성, 여성, 성별미정)
+        for age_group in male_data.keys():
+            male_key = f"{formatted_string_for_one_hour_later}_MALE_{age_group}"
+            female_key = f"{formatted_string_for_one_hour_later}_FEMALE_{age_group}"
+            combined_key = f"{formatted_string_for_one_hour_later}_MIXED_{age_group}"
+
+            self.rdb.set(male_key, json.dumps(male_data[age_group]))
+            self.rdb.expire(male_key, 4210)
+
+            self.rdb.set(female_key, json.dumps(female_data[age_group]))
+            self.rdb.expire(female_key, 4210)
+
+            self.rdb.set(combined_key, json.dumps(mixed_data[age_group]))
+            self.rdb.expire(combined_key, 4210)
+
+        logger.info("남성, 여성, 성별미정 데이터를 Redis에 성공적으로 저장했습니다.")
+
+
+
+c = HotTrendingSchedulingService()
+c.v2_scheduler()
