@@ -239,6 +239,8 @@ class HotTrendingSchedulingService:
         for row in results:
             gender = row['gender']
             age_group = row['age_group']
+            mixed_data['ALL'].append(row)
+            mixed_data[age_group].append(row)
             if gender == 'MALE':
                 male_data['ALL'].append(row)
                 male_data[age_group].append(row)
@@ -246,9 +248,11 @@ class HotTrendingSchedulingService:
                 female_data['ALL'].append(row)
                 female_data[age_group].append(row)
 
-        # 성별미정 데이터는 남성과 여성 데이터를 합친 것
-        for age_group in mixed_data.keys():
-            mixed_data[age_group] = male_data[age_group] + female_data[age_group]
+        # 15개의 케이스에 대해 각각 action_score로 랭킹을 매겨서 상위 20개의 노래들만 자른다.
+        for age_group in male_data.keys():
+            male_data[age_group] = self.get_top_20_by_score(male_data[age_group])
+            female_data[age_group] = self.get_top_20_by_score(female_data[age_group])
+            mixed_data[age_group] = self.get_top_20_by_score(mixed_data[age_group])
 
         # Redis에 저장할 키 생성
         seoul_tz = ZoneInfo('Asia/Seoul')
@@ -273,7 +277,9 @@ class HotTrendingSchedulingService:
 
         logger.info("남성, 여성, 성별미정 데이터를 Redis에 성공적으로 저장했습니다.")
 
-
+    def get_top_20_by_score(self, data_list):
+        # total_score 기준으로 내림차순 정렬 후 상위 20개 추출
+        return sorted(data_list, key=lambda x: x['total_score'], reverse=True)[:20]
 
 c = HotTrendingSchedulingService()
 c.v2_scheduler()
