@@ -1,5 +1,6 @@
 import pymysql
 from langchain_openai import OpenAI
+from langchain_openai import OpenAIEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from pymilvus import Collection, connections, FieldSchema, CollectionSchema, DataType, utility
@@ -8,7 +9,6 @@ import os
 from dotenv import load_dotenv
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.callbacks import StreamingStdOutCallbackHandler
-from sentence_transformers import SentenceTransformer
 from langchain_milvus.vectorstores import Milvus
 import logging
 
@@ -41,7 +41,13 @@ class UserProfileService:
         self.collection = Collection("singsongsangsong_22286")
 
         # Embedding model for user profiles
-        self.embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        self.embedding_model = OpenAIEmbeddings(
+            model="text-embedding-3-large",
+            # With the `text-embedding-3` class
+            # of models, you can specify the size
+            # of the embeddings you want returned.
+            # dimensions=1024
+        )
 
         # Initialize prompt template for profile creation
         self.prompt_template = """
@@ -90,7 +96,7 @@ class UserProfileService:
             # Define the schema for user profile collection
             fields = [
                 FieldSchema(name="member_id", dtype=DataType.INT64, is_primary=True, auto_id=False),
-                FieldSchema(name="profile_vector", dtype=DataType.FLOAT_VECTOR, dim=384),  # Assuming 384-dim vector
+                FieldSchema(name="profile_vector", dtype=DataType.FLOAT_VECTOR, dim=3072),  # Assuming 384-dim vector
                 FieldSchema(name="profile_string", dtype=DataType.VARCHAR, max_length=65535),
             ]
             
@@ -250,7 +256,7 @@ class UserProfileService:
     # 유저 프로파일 임베딩
     def embed_user_profile(self, profile):
         logger.info("Embedding the user profile...")
-        embedding = self.embedding_model.encode(profile)  # 유저 프로파일 임베딩
+        embedding = self.embedding_model.embed_query(profile)  # 유저 프로파일 임베딩
         logger.info("User profile embedded.")
         return embedding
 
@@ -291,7 +297,7 @@ class UserProfileService:
         male_embedding = self.embed_user_profile(male_profile)
         self.insert_or_update_user_profile(
             member_id=0,  # 남성 아이디 0
-            profile_vector=male_embedding.tolist(),
+            profile_vector=male_embedding,
             profile_string=male_profile,
         )
 
@@ -302,7 +308,7 @@ class UserProfileService:
         female_embedding = self.embed_user_profile(female_profile)
         self.insert_or_update_user_profile(
             member_id=-1,  # 여성 아이디 -1
-            profile_vector=female_embedding.tolist(),
+            profile_vector=female_embedding,
             profile_string=female_profile,
         )
 
