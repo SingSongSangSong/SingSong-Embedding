@@ -25,7 +25,6 @@ class HotTrendingService:
         
         self.redis_host = os.getenv('REDIS_HOST')
         self.redis_port = 6379
-        self.db, self.rdb = self.setup_config()
 
     def setup_config(self):
         try:
@@ -60,7 +59,8 @@ class HotTrendingService:
     # V1: 남성 전체, 여성 전체 - live 없음
     def v1_scheduler(self):
         try:
-            cursor = self.db.cursor()
+            db, rdb = self.setup_config()
+            cursor = db.cursor()
 
             cursor.execute("""
                 WITH scored_songs AS (
@@ -127,6 +127,7 @@ class HotTrendingService:
                 LIMIT 20;
             """)
             female_results = cursor.fetchall()
+            db.close()
 
             seoul_tz = ZoneInfo('Asia/Seoul')
             now = datetime.now(seoul_tz)
@@ -137,17 +138,17 @@ class HotTrendingService:
             try:
                 formatted_string_for_current_time = now.strftime("%Y-%m-%d-%H-Hot_Trend")
 
-                male_exists = self.rdb.exists(formatted_string_for_current_time + "_MALE")
-                female_exists = self.rdb.exists(formatted_string_for_current_time + "_FEMALE")
+                male_exists = rdb.exists(formatted_string_for_current_time + "_MALE")
+                female_exists = rdb.exists(formatted_string_for_current_time + "_FEMALE")
 
                 if male_exists:
-                    current_male_data = self.rdb.get(formatted_string_for_current_time + "_MALE")
+                    current_male_data = rdb.get(formatted_string_for_current_time + "_MALE")
                     male_json_data = json.loads(current_male_data)
                 else:
                     male_json_data = []
 
                 if female_exists:
-                    current_female_data = self.rdb.get(formatted_string_for_current_time + "_FEMALE")
+                    current_female_data = rdb.get(formatted_string_for_current_time + "_FEMALE")
                     female_json_data = []
                     female_json_data = json.loads(current_female_data)
                 else:
@@ -179,23 +180,24 @@ class HotTrendingService:
                 raise
 
             new_formatted_string_for_male = formatted_string_for_one_hour_later + "_MALE"
-            self.rdb.set(new_formatted_string_for_male, json.dumps(male_results))
-            self.rdb.expire(new_formatted_string_for_male, 4210)
+            rdb.set(new_formatted_string_for_male, json.dumps(male_results))
+            rdb.expire(new_formatted_string_for_male, 4210)
 
             new_formatted_string_for_female = formatted_string_for_one_hour_later + "_FEMALE"
-            self.rdb.set(new_formatted_string_for_female, json.dumps(female_results))
-            self.rdb.expire(new_formatted_string_for_female, 4210)
+            rdb.set(new_formatted_string_for_female, json.dumps(female_results))
+            rdb.expire(new_formatted_string_for_female, 4210)
 
         except Exception as e:
             logger.error(f"실행 중 오류 발생: {e}")
-        
+
     # V2 - db에 live 추가하면 변경 필요
     # 성별미정 전체, 10대, 20대, 30대, 40대 이상
     # 남성 전체, 10대, 20대, 30대, 40대 이상
     # 여성 전체, 10대, 20대, 30대, 40대 이상
     def v2_scheduler(self):
         try: 
-            cursor = self.db.cursor()
+            db, rdb = self.setup_config()
+            cursor = db.cursor()
             cursor.execute("""     
                 WITH scored_songs AS (
                     SELECT
@@ -226,6 +228,7 @@ class HotTrendingService:
                 JOIN song_info s ON ss.song_info_id = s.song_info_id
             """)
             results = cursor.fetchall()
+            db.close()
 
             # is_live 추가 - 임시
             for _, item in enumerate(results):
@@ -240,8 +243,8 @@ class HotTrendingService:
             for gender_key in ["MALE", "FEMALE", "MIXED"]:
                 for age_group in ["ALL", "10", "20", "30", "40+"]:
                     key = f"{formatted_string_for_current_time}_{gender_key}_{age_group}"
-                    if self.rdb.exists(key):
-                        current_data = self.rdb.get(key)
+                    if rdb.exists(key):
+                        current_data = rdb.get(key)
                         previous_data[gender_key.lower()][age_group] = json.loads(current_data)
                     else:
                         previous_data[gender_key.lower()][age_group] = []
@@ -282,15 +285,16 @@ class HotTrendingService:
                 female_key = f"{formatted_string_for_one_hour_later}_FEMALE_{age_group}"
                 combined_key = f"{formatted_string_for_one_hour_later}_MIXED_{age_group}"
 
-                self.rdb.set(male_key, json.dumps(male_data[age_group]))
-                self.rdb.expire(male_key, 4210)
+                rdb.set(male_key, json.dumps(male_data[age_group]))
+                rdb.expire(male_key, 4210)
 
-                self.rdb.set(female_key, json.dumps(female_data[age_group]))
-                self.rdb.expire(female_key, 4210)
+                rdb.set(female_key, json.dumps(female_data[age_group]))
+                rdb.expire(female_key, 4210)
 
-                self.rdb.set(combined_key, json.dumps(mixed_data[age_group]))
-                self.rdb.expire(combined_key, 4210)
+                rdb.set(combined_key, json.dumps(mixed_data[age_group]))
+                rdb.expire(combined_key, 4210)
 
+            rdb.close()
             logger.info("hot trending 갱신 성공")
 
         except Exception as e:
