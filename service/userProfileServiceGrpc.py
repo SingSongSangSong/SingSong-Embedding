@@ -64,6 +64,9 @@ class UserProfileServiceGrpc(UserProfileServicer):
                 elif request.gender == 'FEMALE':
                     logger.info("Fetching default profile for female users.")
                     user_vector = self.get_user_profile(-1)  # 여성 기본 프로파일
+                elif request.gender == 'UNKNOWN':
+                    logger.info("Fetching default profile for Unkown users.")
+                    user_vector = self.get_user_profile(-2)  # Unknown 기본 프로파일
 
             # 기본 프로파일도 없을 경우 빈 응답 반환
             if not user_vector:
