@@ -261,31 +261,40 @@ class UserProfileService:
         return embedding
 
     # 성별에 따른 전체 성향 조회
-    def fetch_gender_based_actions(self, gender):
-        logger.info(f"Fetching actions for all {gender} users from the database...")
+    def fetch_gender_based_actions(self, gender=None):
+        logger.info(f"Fetching actions for {'all' if gender is None else gender} users from the database...")
         cursor = self.db_connection.cursor()
 
         # 성별에 따른 모든 유저의 song_id와 action_score를 조회 (가정: member 테이블에 gender 필드 존재)
-        query = """
-        SELECT song_info_id, SUM(action_score) as total_score
-        FROM member_action
-        JOIN member ON member_action.member_id = member.member_id
-        WHERE member.gender = %s
-        GROUP BY song_info_id
-        """
-        
-        cursor.execute(query, (gender,))
-        gender_actions = cursor.fetchall()
+        if gender is None:
+            query = """
+            SELECT song_info_id, SUM(action_score) as total_score
+            FROM member_action
+            JOIN member ON member_action.member_id = member.member_id
+            GROUP BY song_info_id
+            """
+            cursor.execute(query)
+        else:
+            query = """
+            SELECT song_info_id, SUM(action_score) as total_score
+            FROM member_action
+            JOIN member ON member_action.member_id = member.member_id
+            WHERE member.gender = %s
+            GROUP BY song_info_id
+            """
+            cursor.execute(query, (gender,))
+
+        actions = cursor.fetchall()
         
         song_ids = []
         scores = []
 
-        for song_id, total_score in gender_actions:
+        for song_id, total_score in actions:
             song_ids.append(song_id)
             scores.append(total_score)
         
         cursor.close()
-        logger.info(f"Fetched {len(song_ids)} songs for {gender} users.")
+        logger.info(f"Fetched {len(song_ids)} songs for {'all' if gender is None else gender} users.")
         return song_ids, scores
 
     # 남성과 여성 전체 성향 벡터 생성 및 저장
@@ -310,6 +319,17 @@ class UserProfileService:
             member_id=-1,  # 여성 아이디 -1
             profile_vector=female_embedding,
             profile_string=female_profile,
+        )
+
+        # 전체 남녀 섞어서의 성향 (아이디 -2)
+        logger.info("Creating profile for all users (male and female)...")
+        all_song_ids, all_scores = self.fetch_gender_based_actions()  # gender=None으로 전체 데이터 조회
+        all_profile = self.create_user_profile(all_song_ids, all_scores)
+        all_embedding = self.embed_user_profile(all_profile)
+        self.insert_or_update_user_profile(
+            member_id=-2,  # 전체 남녀 아이디 -2
+            profile_vector=all_embedding,
+            profile_string=all_profile,
         )
 
     # 전체 프로세스를 실행하는 함수 (성별 프로필 포함)
