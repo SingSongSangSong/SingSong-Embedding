@@ -206,7 +206,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
             # Milvus에서 song_info_id에 해당하는 데이터 조회
             search_results = self.collection.query(
                 expr=f"song_info_id in {int64_list}",  # song_info_id 리스트에 있는 값으로 필터링
-                output_fields=["description", "song_info_id", "artist_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
+                output_fields=["description", "song_info_id", "artist_name", "MR", "ssss", "audio_file_url", "album", "song_number", "song_name"]
             )
             logger.info(f"Retrieved data: {search_results}")
 
@@ -217,7 +217,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
                 # SimilarItem 메시지 생성 및 추가
                 similar_items.append(SimilarItem(
                     songInfoId=result.get("song_info_id"),  # song_info_id
-                    songName=result.page_content,  # 노래 제목
+                    songName=result.get("song_name"),  # 노래 제목
                     singerName=result.get("artist_name"),  # 아티스트 이름
                     isMr=result.get("MR", False),  # MR 여부
                     ssss=result.get("ssss", ""),  # 추가 메타데이터 필드
