@@ -11,7 +11,9 @@ from service.userProfileServiceGrpc import UserProfileServiceGrpc
 from service.langchainServiceGrpc import LangChainServiceGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
-
+from service.hotTrendingService import HotTrendingService
+from db.dbConfig import DatabaseConfig
+from apscheduler.schedulers.background import BackgroundScheduler 
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for more detailed output
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # gRPC 서버를 실행하는 함수
 def serve_grpc():
-    logger.info("Starting gRPC server in a separate thread...")
+    logger.info("Starting gRPC server...")
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), server)
@@ -28,6 +30,12 @@ def serve_grpc():
     server.add_insecure_port('[::]:50051')
     server.start()
     logger.info("gRPC server started on port 50051")
+
+    try:
+        server.wait_for_termination()  # gRPC 서버 종료 대기
+    except (KeyboardInterrupt, SystemExit):
+        background_scheduler.shutdown()
+        logger.info("Scheduler and gRPC server stopped.")
     server.wait_for_termination()
 
 # 매 45분마다 실행할 작업 (UserProfileService의 run 메서드 호출)
@@ -56,19 +64,13 @@ if __name__ == "__main__":
     user_profile_service = UserProfileService()
     user_profile_service.create_user_profile_collection()
     user_profile_service.create_gender_profiles()
+    hot_trending_service = HotTrendingService() # db config, redis config
 
-    # gRPC 서버를 별도의 스레드에서 실행
-    grpc_thread = threading.Thread(target=serve_grpc)
-    grpc_thread.daemon = True
-    grpc_thread.start()
+    background_scheduler = BackgroundScheduler(timezone='Asia/Seoul')
+    background_scheduler.add_job(hot_trending_service.v2_scheduler, 'cron', minute='48', id='hot_trending_scheduler')
+    background_scheduler.add_job(job, 'cron', minute='48', id='user_profile_scheduler')
+    background_scheduler.start()
+    logger.info("Background scheduler started")
 
-    # 매 1440분(24시간)마다 user_profile_service의 run 메서드를 실행하는 작업 스케줄 등록
-    schedule.every(1440).minutes.do(job)
-
-    logger.info("Scheduler started, running every 1440 minutes.")
-
-    # 스케줄러를 실행하여 무한 루프를 돌면서 주기적으로 작업 실행
-    while True:
-        logger.debug("Waiting for scheduled jobs...")
-        schedule.run_pending()
-        time.sleep(1)
+    # gRPC 서버 실행
+    grpc_server = serve_grpc()

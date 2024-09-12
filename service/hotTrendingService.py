@@ -7,15 +7,15 @@ import redis
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo  # Python 3.9 이상
 from dotenv import load_dotenv
-from apscheduler.schedulers.background import BackgroundScheduler 
 
 # .env 파일 로드
 load_dotenv()
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class HotTrendingSchedulingService:
+class HotTrendingService:
     def __init__(self):
         self.db_host = os.getenv('DB_HOST')
         self.db_user = os.getenv('DB_USER')
@@ -219,6 +219,7 @@ class HotTrendingSchedulingService:
                     s.artist_name,
                     s.song_number,
                     s.is_mr,
+                    s.album,
                     ss.gender,
                     ss.age_group
                 FROM scored_songs ss
