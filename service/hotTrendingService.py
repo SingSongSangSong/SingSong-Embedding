@@ -26,7 +26,7 @@ class HotTrendingService:
         self.redis_host = os.getenv('REDIS_HOST')
         self.redis_port = 6379
 
-    def setup_config(self):
+    def setup_db_config(self):
         try:
             db = pymysql.connect(
                 host=self.db_host,
@@ -41,6 +41,9 @@ class HotTrendingService:
             logger.error(f"MySQL 연결 실패: {e}")
             raise
 
+        return db
+    
+    def setup_redis_config(self):
         try:
             rdb = redis.Redis(
                 host=self.redis_host,
@@ -53,13 +56,12 @@ class HotTrendingService:
             raise
 
         logger.info("MySQL 및 Redis 연결 성공")
-
-        return db, rdb
+        return rdb
 
     # V1: 남성 전체, 여성 전체 - live 없음
     def v1_scheduler(self):
         try:
-            db, rdb = self.setup_config()
+            db = self.setup_db_config()
             cursor = db.cursor()
 
             cursor.execute("""
@@ -129,6 +131,7 @@ class HotTrendingService:
             female_results = cursor.fetchall()
             db.close()
 
+            rdb = self.setup_redis_config()
             seoul_tz = ZoneInfo('Asia/Seoul')
             now = datetime.now(seoul_tz)
 
@@ -196,7 +199,7 @@ class HotTrendingService:
     # 여성 전체, 10대, 20대, 30대, 40대 이상
     def v2_scheduler(self):
         try: 
-            db, rdb = self.setup_config()
+            db = self.setup_db_config()
             cursor = db.cursor()
             cursor.execute("""     
                 WITH scored_songs AS (
@@ -233,6 +236,8 @@ class HotTrendingService:
             # is_live 추가 - 임시
             for _, item in enumerate(results):
                 item["is_live"] = 0
+
+            rdb = self.setup_redis_config()
 
             # Redis에서 이전 데이터 가져오기
             seoul_tz = ZoneInfo('Asia/Seoul')
@@ -321,3 +326,134 @@ class HotTrendingService:
                 item["new"] = 0
 
         return current_data
+    
+    def v2_init(self):
+        try: 
+            # 현재 시각과 이후 시각의 데이터를 확인
+            seoul_tz = ZoneInfo('Asia/Seoul')
+            now = datetime.now(seoul_tz)
+            one_hour_later = now + timedelta(hours=1)
+            formatted_string_for_one_hour_later = one_hour_later.strftime("%Y-%m-%d-%H-Hot_Trend")
+
+            nextInitKey = f"{formatted_string_for_one_hour_later}_MIXED_ALL"
+            current = now.strftime("%Y-%m-%d-%H-Hot_Trend")
+            currentInitKey = f"{current}_MIXED_ALL"
+
+            rdb = self.setup_redis_config()
+            currentExists = rdb.exists(currentInitKey)
+            nextExists = rdb.exists(nextInitKey)
+            rdb.close()
+
+            if not currentExists:
+                # 다음 시각의 데이터가 없는 경우 -> 일단 넣어둠
+                db = self.setup_db_config()
+                cursor = db.cursor()
+                cursor.execute("""     
+                    WITH scored_songs AS (
+                        SELECT
+                            ma.song_info_id,
+                            SUM(ma.action_score) AS total_score,
+                            ma.gender,
+                            CASE
+                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
+                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
+                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
+                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
+                            END AS age_group
+                        FROM member_action as ma
+                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                        GROUP BY ma.song_info_id, ma.gender, age_group
+                    )
+                    SELECT
+                        ss.song_info_id,
+                        ss.total_score,
+                        s.song_name,
+                        s.artist_name,
+                        s.song_number,
+                        s.is_mr,
+                        s.album,
+                        ss.gender,
+                        ss.age_group
+                    FROM scored_songs ss
+                    JOIN song_info s ON ss.song_info_id = s.song_info_id
+                """)
+                results = cursor.fetchall()
+                db.close()
+
+                # is_live 추가 - 임시
+                for _, item in enumerate(results):
+                    item["is_live"] = 0
+
+                rdb = self.setup_redis_config()
+
+                # Redis에서 이전 데이터 가져오기
+                seoul_tz = ZoneInfo('Asia/Seoul')
+                now = datetime.now(seoul_tz)
+                one_hour_before = now - timedelta(hours=1)
+                formatted_string_for_one_hour_before = one_hour_before.strftime("%Y-%m-%d-%H-Hot_Trend")
+                time_key = f"{formatted_string_for_one_hour_before}_MIXED_ALL"
+
+                previous_data = {"male": {}, "female": {}, "mixed": {}}
+                for gender_key in ["MALE", "FEMALE", "MIXED"]:
+                    for age_group in ["ALL", "10", "20", "30", "40+"]:
+                        key = f"{time_key}_{gender_key}_{age_group}"
+                        if rdb.exists(key):
+                            current_data = rdb.get(key)
+                            previous_data[gender_key.lower()][age_group] = json.loads(current_data)
+                        else:
+                            previous_data[gender_key.lower()][age_group] = []
+
+                # 성별 및 나이대별로 데이터를 분류하기 위한 저장소
+                male_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+                female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+                mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+
+                # 데이터를 성별 및 나이대에 맞게 분류
+                for row in results:
+                    gender = row['gender']
+                    age_group = row['age_group']
+                    mixed_data['ALL'].append(row)
+                    mixed_data[age_group].append(row)
+                    if gender == 'MALE':
+                        male_data['ALL'].append(row)
+                        male_data[age_group].append(row)
+                    elif gender == 'FEMALE':
+                        female_data['ALL'].append(row)
+                        female_data[age_group].append(row)
+
+                # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
+                for age_group in male_data.keys():
+                    male_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(male_data[age_group]), previous_data["male"][age_group])
+                    female_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(female_data[age_group]), previous_data["female"][age_group])
+                    mixed_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(mixed_data[age_group]), previous_data["mixed"][age_group])
+
+                # Redis에 저장할 키 생성
+                seoul_tz = ZoneInfo('Asia/Seoul')
+                now = datetime.now(seoul_tz)
+                formatted_string_for_current_time = now.strftime("%Y-%m-%d-%H-Hot_Trend")
+
+                # Redis에 저장 (남성, 여성, 성별미정)
+                for age_group in male_data.keys():
+                    male_key = f"{formatted_string_for_current_time}_MALE_{age_group}"
+                    female_key = f"{formatted_string_for_current_time}_FEMALE_{age_group}"
+                    combined_key = f"{formatted_string_for_current_time}_MIXED_{age_group}"
+
+                    rdb.set(male_key, json.dumps(male_data[age_group]))
+                    rdb.expire(male_key, 4210)
+
+                    rdb.set(female_key, json.dumps(female_data[age_group]))
+                    rdb.expire(female_key, 4210)
+
+                    rdb.set(combined_key, json.dumps(mixed_data[age_group]))
+                    rdb.expire(combined_key, 4210)
+
+                rdb.close()
+                logger.info("현재시각 hot trending 추가 완료")
+
+            # 다음 시각의 데이터가 없는 경우 -> 일단 넣어둠
+            if not nextExists:
+                self.v2_scheduler()
+                logger.info("다음시각 hot trending 추가 완료")
+
+        except Exception as e:
+            logger.error(f"hot trending 갱신 중 오류 발생: {e}")
