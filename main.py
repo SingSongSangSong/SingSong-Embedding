@@ -1,12 +1,8 @@
-import schedule
-import time
 import grpc
-import subprocess
 from concurrent import futures
 from service.userProfileService import UserProfileService
 from service.milvusInsertService import MilvusInsertService
 import logging
-import threading
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
 from service.langchainServiceGrpc import LangChainServiceGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
