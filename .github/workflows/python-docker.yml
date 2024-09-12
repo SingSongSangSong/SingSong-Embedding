@@ -63,6 +63,7 @@ jobs:
           DB_PORT: ${{ secrets.DB_PORT }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_USER: ${{ secrets.DB_USER }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LANGCHAIN_TRACING_V2: "true"
@@ -77,6 +78,7 @@ jobs:
           export DB_PORT=$DB_PORT
           export DB_NAME=$DB_NAME
           export DB_USER=$DB_USER
+          export REDIS_HOST=$REDIS_HOST
           export DB_PASSWORD=$DB_PASSWORD
           export OPENAI_API_KEY=$OPENAI_API_KEY
           export LANGCHAIN_TRACING_V2=$LANGCHAIN_TRACING_V2

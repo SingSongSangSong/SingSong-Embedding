@@ -9,7 +9,8 @@ langchain-milvus
 grpcio
 protobuf
 python-dotenv
-schedule
 langchain
 grpcio-tools==1.46.5
 protobuf>=3.20.0
+apscheduler
+redis
