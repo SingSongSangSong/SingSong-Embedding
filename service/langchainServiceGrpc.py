@@ -217,7 +217,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
                 # SimilarItem 메시지 생성 및 추가
                 similar_items.append(SimilarItem(
                     songInfoId=result.get("song_info_id"),  # song_info_id
-                    songName=result.get("song_name"),  # 노래 제목
+                    songName=result.page_content,  # 노래 제목
                     singerName=result.get("artist_name"),  # 아티스트 이름
                     isMr=result.get("MR", False),  # MR 여부
                     ssss=result.get("ssss", ""),  # 추가 메타데이터 필드
