@@ -61,6 +61,7 @@ if __name__ == "__main__":
     user_profile_service.create_user_profile_collection()
     user_profile_service.create_gender_profiles()
     hot_trending_service = HotTrendingService() # db config, redis config
+    hot_trending_service.v2_init()
 
     background_scheduler = BackgroundScheduler(timezone='Asia/Seoul')
     background_scheduler.add_job(hot_trending_service.v2_scheduler, 'cron', minute='50', id='hot_trending_scheduler')
