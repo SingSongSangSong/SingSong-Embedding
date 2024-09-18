@@ -58,13 +58,13 @@ class UserProfileServiceGrpc(UserProfileServicer):
                 logger.warning(f"No user profile found for memberId: {request.memberId}. Looking for gender-based default profile.")
 
                 # gender가 male이면 member_id=0, female이면 member_id=-1
-                if request.gender == 'MALE':
+                if request.gender.upper() == 'MALE':
                     logger.info("Fetching default profile for male users.")
                     user_vector = self.get_user_profile(0)  # 남성 기본 프로파일
-                elif request.gender == 'FEMALE':
+                elif request.gender.upper() == 'FEMALE':
                     logger.info("Fetching default profile for female users.")
                     user_vector = self.get_user_profile(-1)  # 여성 기본 프로파일
-                elif request.gender == 'UNKNOWN':
+                elif request.gender.upper() == 'UNKNOWN':
                     logger.info("Fetching default profile for Unkown users.")
                     user_vector = self.get_user_profile(-2)  # Unknown 기본 프로파일
 
