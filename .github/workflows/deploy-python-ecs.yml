@@ -1,4 +1,4 @@
-name: Dockerizing to Amazon ECR
+name: Dockerizing, Pushing to ECR, and Deploying to ECS
 
 on:
   push:
@@ -6,37 +6,87 @@ on:
       - main
 
 jobs:
-  deploy:
-    name: Deploy
+  build-and-deploy:
+    name: Build and Deploy to ECS
     runs-on: ubuntu-latest
 
+    env:
+      AWS_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+      ECS_CLUSTER_NAME: ${{ secrets.ECS_CLUSTER_NAME }}
+      ECR_REPOSITORY_NAME: ${{ secrets.ECR_REPOSITORY }}
+      ECS_CONTAINER_NAME: ${{ secrets.ECS_CONTAINER_NAME }}
+      ECS_SERVICE_NAME: ${{ secrets.ECS_SERVICE_NAME }}
+      TASK_DEFINITION_NAME: ${{ secrets.TASK_DEFINITION_NAME }}
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v2
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-    - name: Build and push Docker image (multi-platform)
-      uses: docker/build-push-action@v6
-      with:
-        context: .
-        push: true
-        tags: |
-          ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest
-        build-args: |
-          AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}
-          S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
 
-    - name: Output the image name
-      run: echo "::set-output name=image::${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:${{ github.sha }}"
+      - name: Build and push Docker image (multi-platform)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest
+          build-args: |
+            AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            AWS_DEFAULT_REGION=${{ secrets.AWS_DEFAULT_REGION }}
+            S3_BUCKET_NAME=${{ secrets.S3_BUCKET_NAME }}
+
+      - name: Get Git commit SHA
+        id: vars
+        run: echo "GIT_SHA=$(git rev-parse --short=7 HEAD)" >> $GITHUB_ENV
+
+      - name: Download Task Definition Template
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.TASK_DEFINITION_NAME }} \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest
+
+      - name: Add environment variables to the task definition
+        run: |
+          jq '.containerDefinitions[0].environment += [
+            {"name":"SERVER_MODE","value":"prod"},
+            {"name":"DB_HOST","value":"${{ secrets.RDS_HOST }}"},
+            {"name":"DB_USER","value":"${{ secrets.RDS_USER }}"},
+            {"name":"DB_PASSWORD","value":"${{ secrets.RDS_PASSWORD }}"},
+            {"name":"DB_DATABASE","value":"${{ secrets.DB_NAME }}"},
+            {"name":"OPENAI_API_KEY","value":"${{ secrets.OPENAI_API_KEY }}"},
+            {"name":"LANGCHAIN_TRACING_V2","value":"${{ secrets.LANGCHAIN_TRACING_V2 }}"},
+            {"name":"LANGCHAIN_ENDPOINT","value":"${{ secrets.LANGCHAIN_ENDPOINT }}"},
+            {"name":"LANGCHAIN_API_KEY","value":"${{ secrets.LANGCHAIN_API_KEY }}"},
+            {"name":"LANGCHAINPROJECT","value":"${{ secrets.LANGCHAINPROJECT }}"}
+          ]' task-definition.json > new-task-definition.json
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: new-task-definition.json
+          service: ${{ env.ECS_SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER_NAME }}
+          wait-for-service-stability: true
