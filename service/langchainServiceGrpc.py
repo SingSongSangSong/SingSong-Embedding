@@ -32,7 +32,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
             api_key=self.OPENAI_API_KEY
         )
 
-        connections.connect(alias="default", host="milvus-standalone", port="19530")
+        connections.connect(alias="default", host=os.getenv("MILVUS_HOST", "milvus-standalone"), port="19530")
         self.collection = Collection("singsongsangsong_22286")
 
         # Embedding model for user profiles

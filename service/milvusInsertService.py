@@ -7,16 +7,16 @@ import logging
 import openai
 import math
 from openai import OpenAI
-
+import os
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MilvusInsertService:
-    def __init__(self, collection_name, host='milvus-standalone', port='19530'):
+    def __init__(self, collection_name, port='19530'):
         self.collection_name = collection_name
-        self.host = host
+        self.host = os.getenv("MILVUS_HOST", "milvus-standalone")
         self.port = port
         self.collection = None
 
