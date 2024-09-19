@@ -73,6 +73,10 @@ def job():
     logger.info("User profile creation process finished.")
 
 if __name__ == "__main__":
+    # Milvus insert 작업을 백그라운드 스레드에서 실행
+    milvus_insert_thread = threading.Thread(target=run_milvus_insert_script)
+    milvus_insert_thread.start()
+
     # UserProfileService 인스턴스 생성
     user_profile_service = UserProfileService()
     user_profile_service.create_user_profile_collection()
@@ -94,10 +98,6 @@ if __name__ == "__main__":
     # Flask 서버를 백그라운드 스레드에서 실행
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
-
-    # Milvus insert 작업을 백그라운드 스레드에서 실행
-    milvus_insert_thread = threading.Thread(target=run_milvus_insert_script)
-    milvus_insert_thread.start()
 
     grpc_thread.join()  # gRPC 서버 종료 대기
     flask_thread.join()  # Flask 서버 종료 대기
