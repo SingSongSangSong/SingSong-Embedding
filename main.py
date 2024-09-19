@@ -73,14 +73,20 @@ def job():
     logger.info("User profile creation process finished.")
 
 if __name__ == "__main__":
-    # Milvus insert 작업을 백그라운드 스레드에서 실행
-    milvus_insert_thread = threading.Thread(target=run_milvus_insert_script)
-    milvus_insert_thread.start()
+    # Flask 서버를 백그라운드 스레드에서 실행
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    # Milvus insert 작업을 메인 스레드에서 실행
+    logger.info("Running Milvus insert process...")
+    run_milvus_insert_script()  # 스레드로 실행하지 않고, 순차적으로 실행
+    logger.info("Milvus insert process completed. Starting gRPC server...")
 
     # UserProfileService 인스턴스 생성
     user_profile_service = UserProfileService()
     user_profile_service.create_user_profile_collection()
     user_profile_service.create_gender_profiles()
+    
     hot_trending_service = HotTrendingService()  # db config, redis config
     hot_trending_service.v2_init()
 
@@ -91,14 +97,12 @@ if __name__ == "__main__":
     background_scheduler.start()
     logger.info("Background scheduler started")
 
-    # gRPC 서버를 백그라운드 스레드에서 실행
+    # Milvus insert 작업이 완료된 후 gRPC 서버를 백그라운드 스레드에서 실행
     grpc_thread = threading.Thread(target=serve_grpc)
     grpc_thread.start()
 
-    # Flask 서버를 백그라운드 스레드에서 실행
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.start()
+    # gRPC 서버 종료 대기
+    grpc_thread.join()
 
-    grpc_thread.join()  # gRPC 서버 종료 대기
-    flask_thread.join()  # Flask 서버 종료 대기
-    milvus_insert_thread.join()  # Milvus insert 스레드 종료 대기
+    # Flask 서버 종료 대기
+    flask_thread.join()
