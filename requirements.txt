@@ -14,3 +14,4 @@ grpcio-tools==1.46.5
 protobuf>=3.20.0
 apscheduler
 redis
+flask

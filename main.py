@@ -9,14 +9,21 @@ from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserPro
 from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
 from service.hotTrendingService import HotTrendingService
 from db.dbConfig import DatabaseConfig
-from apscheduler.schedulers.background import BackgroundScheduler 
+from apscheduler.schedulers.background import BackgroundScheduler
+import threading
+from flask import Flask, jsonify  # Flask 임포트
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)  # Set to DEBUG for more detailed output
 logger = logging.getLogger(__name__)
 
+# Flask 앱 생성
+app = Flask(__name__)
+grpc_server_running = False  # gRPC 서버 상태 추적 변수
+
 # gRPC 서버를 실행하는 함수
 def serve_grpc():
+    global grpc_server_running
     logger.info("Starting gRPC server...")
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
 
@@ -25,6 +32,7 @@ def serve_grpc():
 
     server.add_insecure_port('[::]:50051')
     server.start()
+    grpc_server_running = True  # gRPC 서버가 실행 중임을 나타냄
     logger.info("gRPC server started on port 50051")
 
     try:
@@ -32,13 +40,19 @@ def serve_grpc():
     except (KeyboardInterrupt, SystemExit):
         background_scheduler.shutdown()
         logger.info("Scheduler and gRPC server stopped.")
-    server.wait_for_termination()
+        grpc_server_running = False  # gRPC 서버가 중지되었음을 표시
 
-# 매 45분마다 실행할 작업 (UserProfileService의 run 메서드 호출)
-def job():
-    logger.info("Running user profile creation process.")
-    user_profile_service.run()  # user_profile_service의 run 메서드를 호출
-    logger.info("User profile creation process finished.")
+# Flask Health Check 엔드포인트
+@app.route("/health", methods=["GET"])
+def health_check():
+    if grpc_server_running:
+        return jsonify({"status": "gRPC server running"}), 200
+    else:
+        return jsonify({"status": "gRPC server not running"}), 503
+
+# Flask 서버를 실행하는 함수
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
 
 # Milvus insert 실행 함수
 def run_milvus_insert_script():
@@ -52,22 +66,39 @@ def run_milvus_insert_script():
 
     logger.info("Milvus insert process completed successfully.")
 
-if __name__ == "__main__":
-    # Milvus insert script 실행
-    run_milvus_insert_script()
+# 매 45분마다 실행할 작업 (UserProfileService의 run 메서드 호출)
+def job():
+    logger.info("Running user profile creation process.")
+    user_profile_service.run()  # user_profile_service의 run 메서드를 호출
+    logger.info("User profile creation process finished.")
 
+if __name__ == "__main__":
     # UserProfileService 인스턴스 생성
     user_profile_service = UserProfileService()
     user_profile_service.create_user_profile_collection()
     user_profile_service.create_gender_profiles()
-    hot_trending_service = HotTrendingService() # db config, redis config
+    hot_trending_service = HotTrendingService()  # db config, redis config
     hot_trending_service.v2_init()
 
+    # Background scheduler 시작
     background_scheduler = BackgroundScheduler(timezone='Asia/Seoul')
     background_scheduler.add_job(hot_trending_service.v2_scheduler, 'cron', minute='50', id='hot_trending_scheduler')
     background_scheduler.add_job(job, 'cron', minute='55', id='user_profile_scheduler')
     background_scheduler.start()
     logger.info("Background scheduler started")
 
-    # gRPC 서버 실행
-    grpc_server = serve_grpc()
+    # gRPC 서버를 백그라운드 스레드에서 실행
+    grpc_thread = threading.Thread(target=serve_grpc)
+    grpc_thread.start()
+
+    # Flask 서버를 백그라운드 스레드에서 실행
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    # Milvus insert 작업을 백그라운드 스레드에서 실행
+    milvus_insert_thread = threading.Thread(target=run_milvus_insert_script)
+    milvus_insert_thread.start()
+
+    grpc_thread.join()  # gRPC 서버 종료 대기
+    flask_thread.join()  # Flask 서버 종료 대기
+    milvus_insert_thread.join()  # Milvus insert 스레드 종료 대기
