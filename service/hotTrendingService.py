@@ -184,11 +184,11 @@ class HotTrendingService:
 
             new_formatted_string_for_male = formatted_string_for_one_hour_later + "_MALE"
             rdb.set(new_formatted_string_for_male, json.dumps(male_results))
-            rdb.expire(new_formatted_string_for_male, 4210)
+            rdb.expire(new_formatted_string_for_male, 4800)
 
             new_formatted_string_for_female = formatted_string_for_one_hour_later + "_FEMALE"
             rdb.set(new_formatted_string_for_female, json.dumps(female_results))
-            rdb.expire(new_formatted_string_for_female, 4210)
+            rdb.expire(new_formatted_string_for_female, 4800)
 
         except Exception as e:
             logger.error(f"실행 중 오류 발생: {e}")
@@ -208,7 +208,7 @@ class HotTrendingService:
                         SUM(ma.action_score) AS total_score,
                         ma.gender,
                         CASE
-                            WHEN ma.birthyear = 0 THEN 'unknown'
+                            WHEN ma.birthyear = 0 THEN 'ALL'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
@@ -265,13 +265,16 @@ class HotTrendingService:
                 gender = row['gender']
                 age_group = row['age_group']
                 mixed_data['ALL'].append(row)
-                mixed_data[age_group].append(row)
                 if gender == 'MALE':
+                    if age_group != 'ALL':
+                        male_data[age_group].append(row)
+                        mixed_data[age_group].append(row)
                     male_data['ALL'].append(row)
-                    male_data[age_group].append(row)
                 elif gender == 'FEMALE':
+                    if age_group != 'ALL':
+                        female_data[age_group].append(row)
+                        mixed_data[age_group].append(row)
                     female_data['ALL'].append(row)
-                    female_data[age_group].append(row)
 
             # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
             for age_group in male_data.keys():
@@ -280,8 +283,6 @@ class HotTrendingService:
                 mixed_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(mixed_data[age_group]), previous_data["mixed"][age_group])
 
             # Redis에 저장할 키 생성
-            seoul_tz = ZoneInfo('Asia/Seoul')
-            now = datetime.now(seoul_tz)
             one_hour_later = now + timedelta(hours=1)
             formatted_string_for_one_hour_later = one_hour_later.strftime("%Y-%m-%d-%H-Hot_Trend")
 
@@ -292,19 +293,20 @@ class HotTrendingService:
                 combined_key = f"{formatted_string_for_one_hour_later}_MIXED_{age_group}"
 
                 rdb.set(male_key, json.dumps(male_data[age_group]))
-                rdb.expire(male_key, 4210)
+                rdb.expire(male_key, 4800)
 
                 rdb.set(female_key, json.dumps(female_data[age_group]))
-                rdb.expire(female_key, 4210)
+                rdb.expire(female_key, 4800)
 
                 rdb.set(combined_key, json.dumps(mixed_data[age_group]))
-                rdb.expire(combined_key, 4210)
+                rdb.expire(combined_key, 4800)
 
             rdb.close()
             logger.info("hot trending 갱신 성공")
 
         except Exception as e:
-            logger.error(f"hot trending 갱신 중 오류 발생: {e}")
+            logger.exception("hot trending 갱신 중 오류 발생")
+            
 
     def get_top_20_by_score(self, data_list):
         # total_score 기준으로 내림차순 정렬 후 상위 20개 추출
@@ -356,6 +358,7 @@ class HotTrendingService:
                             SUM(ma.action_score) AS total_score,
                             ma.gender,
                             CASE
+                                WHEN ma.birthyear = 0 THEN 'ALL'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
@@ -414,13 +417,16 @@ class HotTrendingService:
                     gender = row['gender']
                     age_group = row['age_group']
                     mixed_data['ALL'].append(row)
-                    mixed_data[age_group].append(row)
                     if gender == 'MALE':
+                        if age_group != 'ALL':
+                            male_data[age_group].append(row)
+                            mixed_data[age_group].append(row)
                         male_data['ALL'].append(row)
-                        male_data[age_group].append(row)
                     elif gender == 'FEMALE':
+                        if age_group != 'ALL':
+                            female_data[age_group].append(row)
+                            mixed_data[age_group].append(row)
                         female_data['ALL'].append(row)
-                        female_data[age_group].append(row)
 
                 # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
                 for age_group in male_data.keys():
@@ -457,4 +463,4 @@ class HotTrendingService:
                 logger.info("다음시각 hot trending 추가 완료")
 
         except Exception as e:
-            logger.error(f"hot trending 갱신 중 오류 발생: {e}")
+            logger.exception("hot trending 갱신 중 오류 발생")
