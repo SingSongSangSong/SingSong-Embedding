@@ -71,16 +71,7 @@ jobs:
       - name: Add environment variables to the task definition
         run: |
           jq '.containerDefinitions[0].environment += [
-            {"name":"SERVER_MODE","value":"prod"},
-            {"name":"DB_HOST","value":"${{ secrets.RDS_HOST }}"},
-            {"name":"DB_USER","value":"${{ secrets.RDS_USER }}"},
-            {"name":"DB_PASSWORD","value":"${{ secrets.RDS_PASSWORD }}"},
-            {"name":"DB_DATABASE","value":"${{ secrets.DB_NAME }}"},
-            {"name":"OPENAI_API_KEY","value":"${{ secrets.OPENAI_API_KEY }}"},
-            {"name":"LANGCHAIN_TRACING_V2","value":"${{ secrets.LANGCHAIN_TRACING_V2 }}"},
-            {"name":"LANGCHAIN_ENDPOINT","value":"${{ secrets.LANGCHAIN_ENDPOINT }}"},
-            {"name":"LANGCHAIN_API_KEY","value":"${{ secrets.LANGCHAIN_API_KEY }}"},
-            {"name":"LANGCHAINPROJECT","value":"${{ secrets.LANGCHAINPROJECT }}"}
+            {"name":"SERVER_MODE","value":"prod"}
           ]' task-definition.json > new-task-definition.json
 
       - name: Deploy Amazon ECS task definition

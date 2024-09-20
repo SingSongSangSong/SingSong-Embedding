@@ -355,7 +355,7 @@ class UserProfileService:
             # 3. Insert or update user profile in Milvus, including song descriptions
             self.insert_or_update_user_profile(
                 user_id=user_id,
-                profile_vector=user_embedding.tolist(),  # Convert to list before storing
+                profile_vector=user_embedding,  # Convert to list before storing
                 profile_string=user_profile,
             )
 
