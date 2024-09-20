@@ -41,6 +41,7 @@ class HotTrendingService:
             logger.error(f"MySQL 연결 실패: {e}")
             raise
 
+        logger.info("db 연결 성공")
         return db
     
     def setup_redis_config(self):
@@ -55,7 +56,7 @@ class HotTrendingService:
             logger.error(f"Redis 연결 실패: {e}")
             raise
 
-        logger.info("MySQL 및 Redis 연결 성공")
+        logger.info("Redis 연결 성공")
         return rdb
 
     # V1: 남성 전체, 여성 전체 - live 없음
@@ -264,17 +265,17 @@ class HotTrendingService:
             for row in results:
                 gender = row['gender']
                 age_group = row['age_group']
-                mixed_data['ALL'].append(row)
+                mixed_data['ALL'].append(row.copy())
                 if gender == 'MALE':
                     if age_group != 'ALL':
-                        male_data[age_group].append(row)
-                        mixed_data[age_group].append(row)
-                    male_data['ALL'].append(row)
+                        male_data[age_group].append(row.copy())
+                        mixed_data[age_group].append(row.copy())
+                    male_data['ALL'].append(row.copy())
                 elif gender == 'FEMALE':
                     if age_group != 'ALL':
-                        female_data[age_group].append(row)
-                        mixed_data[age_group].append(row)
-                    female_data['ALL'].append(row)
+                        female_data[age_group].append(row.copy())
+                        mixed_data[age_group].append(row.copy())
+                    female_data['ALL'].append(row.copy())
 
             # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
             for age_group in male_data.keys():
@@ -315,8 +316,9 @@ class HotTrendingService:
     def add_ranking_info(self, current_data, previous_data):
         previous_ranking = {item["song_info_id"]: item["ranking"] for item in previous_data}
 
+        rank = 1
         for idx, item in enumerate(current_data):
-            current_ranking = idx + 1  # 1위부터 시작
+            current_ranking = idx+1  # 1위부터 시작
             item["ranking"] = current_ranking
 
             # 이전 랭킹과 비교하여 ranking_change 계산
@@ -327,6 +329,7 @@ class HotTrendingService:
             else:
                 item["ranking_change"] = previous_rank - current_ranking
                 item["new"] = 0
+            rank = rank + 1
 
         return current_data
     
@@ -416,17 +419,17 @@ class HotTrendingService:
                 for row in results:
                     gender = row['gender']
                     age_group = row['age_group']
-                    mixed_data['ALL'].append(row)
+                    mixed_data['ALL'].append(row.copy())
                     if gender == 'MALE':
                         if age_group != 'ALL':
-                            male_data[age_group].append(row)
-                            mixed_data[age_group].append(row)
-                        male_data['ALL'].append(row)
+                            male_data[age_group].append(row.copy())
+                            mixed_data[age_group].append(row.copy())
+                        male_data['ALL'].append(row.copy())
                     elif gender == 'FEMALE':
                         if age_group != 'ALL':
-                            female_data[age_group].append(row)
-                            mixed_data[age_group].append(row)
-                        female_data['ALL'].append(row)
+                            female_data[age_group].append(row.copy())
+                            mixed_data[age_group].append(row.copy())
+                        female_data['ALL'].append(row.copy())
 
                 # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
                 for age_group in male_data.keys():
