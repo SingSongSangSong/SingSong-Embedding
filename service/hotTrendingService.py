@@ -208,7 +208,7 @@ class HotTrendingService:
                         SUM(ma.action_score) AS total_score,
                         ma.gender,
                         CASE
-                            WHEN ma.birthyear = 0 THEN 'unknown'
+                            WHEN ma.birthyear = 0 THEN 'ALL'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
@@ -355,6 +355,7 @@ class HotTrendingService:
                             SUM(ma.action_score) AS total_score,
                             ma.gender,
                             CASE
+                                WHEN ma.birthyear = 0 THEN 'ALL'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
