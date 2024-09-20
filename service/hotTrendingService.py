@@ -265,13 +265,14 @@ class HotTrendingService:
                 gender = row['gender']
                 age_group = row['age_group']
                 mixed_data['ALL'].append(row)
-                mixed_data[age_group].append(row)
                 if gender == 'MALE':
                     male_data['ALL'].append(row)
                     male_data[age_group].append(row)
+                    mixed_data[age_group].append(row)
                 elif gender == 'FEMALE':
                     female_data['ALL'].append(row)
                     female_data[age_group].append(row)
+                    mixed_data[age_group].append(row)
 
             # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
             for age_group in male_data.keys():
@@ -414,13 +415,14 @@ class HotTrendingService:
                     gender = row['gender']
                     age_group = row['age_group']
                     mixed_data['ALL'].append(row)
-                    mixed_data[age_group].append(row)
                     if gender == 'MALE':
                         male_data['ALL'].append(row)
                         male_data[age_group].append(row)
+                        mixed_data[age_group].append(row)
                     elif gender == 'FEMALE':
                         female_data['ALL'].append(row)
                         female_data[age_group].append(row)
+                        mixed_data[age_group].append(row)
 
                 # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
                 for age_group in male_data.keys():
