@@ -7,16 +7,16 @@ import logging
 import openai
 import math
 from openai import OpenAI
-
+import os
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MilvusInsertService:
-    def __init__(self, collection_name, host='milvus-standalone', port='19530'):
+    def __init__(self, collection_name, port='19530'):
         self.collection_name = collection_name
-        self.host = host
+        self.host = os.getenv("MILVUS_HOST", "milvus-standalone")
         self.port = port
         self.collection = None
 
@@ -368,12 +368,19 @@ class MilvusInsertService:
             merged_data[column + '_explanation'] = merged_data.apply(lambda row: self.classify_and_explain_numeric(row, column, min_val, max_val), axis=1)
         return merged_data
 
-    def generate_embeddings(self, merged_data, client, batch_size=100, delay_seconds=1):
+    def generate_embeddings(self, merged_data, client, batch_size=100, delay_seconds=10):
         """Generate embeddings using OpenAI API with batching."""
-        # Apply numeric classification and generate descriptions
-        merged_data = self.apply_numeric_classification(merged_data)
-        merged_data['description'] = merged_data.apply(self.generate_description, axis=1)
-        
+        try:
+            # Apply numeric classification and generate descriptions
+            print("Applying numeric classification...")
+            merged_data = self.apply_numeric_classification(merged_data)
+            
+            print("Generating descriptions...")
+            merged_data['description'] = merged_data.apply(self.generate_description, axis=1)
+        except Exception as e:
+            print(f"Error during numeric classification or description generation: {e}")
+            raise e
+
         def get_batch_embeddings(text_list):
             try:
                 # Ensure input to the API is just plain text (list of strings)
@@ -388,28 +395,36 @@ class MilvusInsertService:
                 print(f"Error during embedding creation: {e}")
                 raise e
 
-        # Batch processing to handle large datasets
-        num_batches = math.ceil(len(merged_data) / batch_size)
-        all_embeddings = []
+        try:
+            # Batch processing to handle large datasets
+            num_batches = math.ceil(len(merged_data) / batch_size)
+            all_embeddings = []
 
-        for i in range(num_batches):
-            # Get batch of descriptions
-            batch_descriptions = merged_data['description'].iloc[i * batch_size: (i + 1) * batch_size].tolist()
-            
-            # Make sure the batch contains only strings and is not empty
-            if batch_descriptions:
-                print(f"Processing batch {i+1}/{num_batches}")
-                batch_embeddings = get_batch_embeddings(batch_descriptions)
-                all_embeddings.extend(batch_embeddings)
-            
-            # Pause for rate limit handling
-            print(f"Pausing for {delay_seconds} seconds to avoid rate limits...")
-            time.sleep(delay_seconds)
+            for i in range(num_batches):
+                try:
+                    # Get batch of descriptions
+                    batch_descriptions = merged_data['description'].iloc[i * batch_size: (i + 1) * batch_size].tolist()
+                    
+                    # Make sure the batch contains only strings and is not empty
+                    if batch_descriptions:
+                        print(f"Processing batch {i+1}/{num_batches}")
+                        batch_embeddings = get_batch_embeddings(batch_descriptions)
+                        all_embeddings.extend(batch_embeddings)
+                except Exception as e:
+                    print(f"Error during batch {i+1} processing: {e}")
+                    raise e
+                
+                # Pause for rate limit handling
+                print(f"Pausing for {delay_seconds} seconds to avoid rate limits...")
+                time.sleep(delay_seconds)
 
-        # Add embeddings to the merged_data DataFrame
-        merged_data['vector'] = all_embeddings
+            # Add embeddings to the merged_data DataFrame
+            merged_data['vector'] = all_embeddings
+            return merged_data
 
-        return merged_data
+        except Exception as e:
+            print(f"Error during the overall embedding process: {e}")
+            raise e
 
     def insert_into_milvus(self, merged_data, batch_size=100):
         """Milvus에 데이터 삽입"""
@@ -450,11 +465,14 @@ class MilvusInsertService:
             # 데이터 로드 및 전처리
             merged_data = self.load_and_preprocess_data(song_info_path, data_path)
             
+            logger.info(f"Loaded and preprocessed data. Total rows: {len(merged_data)}")
             # 임베딩 모델 로드
             client = OpenAI()
 
             # 임베딩 생성
             merged_data = self.generate_embeddings(merged_data, client)
+
+            logger.info("Embeddings generated successfully.")
 
             # 데이터 삽입
             self.insert_into_milvus(merged_data)

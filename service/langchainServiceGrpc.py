@@ -21,6 +21,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
     def __init__(self):
         # Load API keys from environment
         self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        self.milvus_host = os.getenv("MILVUS_HOST", "milvus-standalone")
 
         # Initialize LLM model
         self.llm = ChatOpenAI(
@@ -32,7 +33,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
             api_key=self.OPENAI_API_KEY
         )
 
-        connections.connect(alias="default", host="milvus-standalone", port="19530")
+        connections.connect(alias="default", host=self.milvus_host, port="19530")
         self.collection = Collection("singsongsangsong_22286")
 
         # Embedding model for user profiles
@@ -43,7 +44,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
         self.vectorstore = Milvus(
             embedding_function=self.embedding_model,
             collection_name=self.collection_name,
-            connection_args={"host": "milvus-standalone", "port": "19530"},
+            connection_args={"host": self.milvus_host, "port": "19530"},
             text_field="song_name"
         )
         self.retriever = self.vectorstore.as_retriever()
