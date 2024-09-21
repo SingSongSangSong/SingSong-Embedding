@@ -345,16 +345,16 @@ class UserProfileService:
         # Fetch user actions for the fetched recent user IDs
         user_data = self.fetch_user_actions_for_ids(recent_user_ids)
 
-        for user_id, user_info in user_data.items():
+        for member_id, user_info in user_data.items():
             # 1. 유저 프로파일 생성
-            logger.info(f"Processing user {user_id}...")
+            logger.info(f"Processing user {member_id}...")
             user_profile = self.create_user_profile(user_info["song_ids"], user_info["scores"])
             # 2. 유저 프로파일 임베딩
             user_embedding = self.embed_user_profile(user_profile)
-            logger.info(f"User {user_id} - Similar Songs:")
+            logger.info(f"User {member_id} - Similar Songs:")
             # 3. Insert or update user profile in Milvus, including song descriptions
             self.insert_or_update_user_profile(
-                user_id=user_id,
+                member_id=member_id,
                 profile_vector=user_embedding,  # Convert to list before storing
                 profile_string=user_profile,
             )
