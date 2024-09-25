@@ -8,6 +8,7 @@ from service.langchainServiceGrpc import LangChainServiceGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
 from service.hotTrendingService import HotTrendingService
+from service.tjCrawlingService import TJCrawlingService
 from db.dbConfig import DatabaseConfig
 from apscheduler.schedulers.background import BackgroundScheduler
 import threading
@@ -90,10 +91,13 @@ if __name__ == "__main__":
     hot_trending_service = HotTrendingService()  # db config, redis config
     hot_trending_service.v2_init()
 
+    crawling_service = TJCrawlingService()
+
     # Background scheduler 시작
     background_scheduler = BackgroundScheduler(timezone='Asia/Seoul')
     background_scheduler.add_job(hot_trending_service.v2_scheduler, 'cron', minute='50', id='hot_trending_scheduler')
     background_scheduler.add_job(job, 'cron', minute='55', id='user_profile_scheduler')
+    background_scheduler.add_job(crawling_service.crawl_and_save_new_songs, 'cron', day='1', hour='3', minute='0', id='monthly_new_song_scheduler')
     background_scheduler.start()
     logger.info("Background scheduler started")
 
