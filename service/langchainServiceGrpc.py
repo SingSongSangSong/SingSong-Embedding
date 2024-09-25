@@ -154,14 +154,15 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
 
         prompt_refine = ChatPromptTemplate.from_template(
             """
-            Based on the query "{query}" and the following song metadata retrieved from the database:
+            Given the query: "{query}" and the following song metadata retrieved from the database:
+
             {retrieved_data}
 
-            Please provide exactly 5 song recommendations by their song info IDs, formatted as:
+            Provide exactly 10 song recommendations by their song info IDs, in the format:
 
-            - Recommendation: [<song_info_id1>, <song_info_id2>, <song_info_id3>, <song_info_id4>, <song_info_id5>]
+            - Recommendation: [<song_info_id1>, <song_info_id2>, <song_info_id3>, <song_info_id4>, <song_info_id5>, <song_info_id6>, <song_info_id7>, <song_info_id8>, <song_info_id9>, <song_info_id10>]
 
-            Only provide the song info IDs without any additional descriptions or explanations.
+            Only provide the song info IDs in the specified format, without any additional information.
             """
         )
 
