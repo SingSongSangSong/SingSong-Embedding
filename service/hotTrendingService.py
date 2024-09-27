@@ -262,11 +262,12 @@ class HotTrendingService:
             female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
             mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
 
-            # 데이터를 성별 및 나이대에 맞게 분류
+            # 남자/여자 데이터를 성별 및 나이대에 맞게 분류
             for row in results:
                 gender = row['gender']
                 age_group = row['age_group']
-                # song_info_id 중복 여부를 확인한 후 없다면 mixed_data['ALL']에 추가 age_group은 ALL로, gender는 MIXED로 변경한다. 그리고 이미 있다면 total_score를 더한다.
+
+                # 전체 성별 - 전체 연령
                 existing_song = next((item for item in mixed_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
                 if existing_song:
                     existing_song['total_score'] += row['total_score']  # total_score 더하기
@@ -276,10 +277,20 @@ class HotTrendingService:
                     new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
                     mixed_data['ALL'].append(new_row)
                 
+                # 전체 성별 - 특정 연령
+                if age_group != 'ALL':
+                    # mixed_data[age_group]을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
+                    existing_song_mixed = next((item for item in mixed_data[age_group] if item['song_info_id'] == row['song_info_id']), None)
+                    if existing_song_mixed:
+                        existing_song_mixed['total_score'] += row['total_score']  # total_score 더하기
+                    else:
+                        new_row = row.copy()
+                        new_row['gender'] = 'MIXED'
+                        mixed_data[age_group].append(new_row)
+                
+                # 특정 성별 - 전체 연령
                 if gender == 'MALE':
-                    if age_group != 'ALL':
-                        male_data[age_group].append(row.copy())
-                        mixed_data[age_group].append(row.copy())
+                    #male_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
                     existing_song_male_all = next((item for item in male_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
                     if existing_song_male_all:
                         existing_song_male_all['total_score'] += row['total_score']  # total_score 더하기
@@ -288,9 +299,7 @@ class HotTrendingService:
                         new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
                         male_data['ALL'].append(new_row)
                 elif gender == 'FEMALE':
-                    if age_group != 'ALL':
-                        female_data[age_group].append(row.copy())
-                        mixed_data[age_group].append(row.copy())
+                    #female_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
                     existing_song_female_all = next((item for item in female_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
                     if existing_song_female_all:
                         existing_song_female_all['total_score'] += row['total_score']  # total_score 더하기
@@ -298,6 +307,12 @@ class HotTrendingService:
                         new_row = row.copy()
                         new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
                         female_data['ALL'].append(new_row)
+                    
+                # 특정 성별 - 특정 연령
+                if gender == 'MALE' and age_group != 'ALL':
+                    male_data[age_group].append(row.copy())
+                elif gender == 'FEMALE' and age_group != 'ALL':
+                    female_data[age_group].append(row.copy())
 
             # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
             for age_group in male_data.keys():
@@ -438,11 +453,12 @@ class HotTrendingService:
                 female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
                 mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
 
-                # 데이터를 성별 및 나이대에 맞게 분류
+                # 남자/여자 데이터를 성별 및 나이대에 맞게 분류
                 for row in results:
                     gender = row['gender']
                     age_group = row['age_group']
-                    # song_info_id 중복 여부를 확인한 후 없다면 mixed_data['ALL']에 추가 age_group은 ALL로, gender는 MIXED로 변경한다. 그리고 이미 있다면 total_score를 더한다.
+
+                    # 전체 성별 - 전체 연령
                     existing_song = next((item for item in mixed_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
                     if existing_song:
                         existing_song['total_score'] += row['total_score']  # total_score 더하기
@@ -452,10 +468,20 @@ class HotTrendingService:
                         new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
                         mixed_data['ALL'].append(new_row)
                     
+                    # 전체 성별 - 특정 연령
+                    if age_group != 'ALL':
+                        # mixed_data[age_group]을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
+                        existing_song_mixed = next((item for item in mixed_data[age_group] if item['song_info_id'] == row['song_info_id']), None)
+                        if existing_song_mixed:
+                            existing_song_mixed['total_score'] += row['total_score']  # total_score 더하기
+                        else:
+                            new_row = row.copy()
+                            new_row['gender'] = 'MIXED'
+                            mixed_data[age_group].append(new_row)
+                    
+                    # 특정 성별 - 전체 연령
                     if gender == 'MALE':
-                        if age_group != 'ALL':
-                            male_data[age_group].append(row.copy())
-                            mixed_data[age_group].append(row.copy())
+                        #male_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
                         existing_song_male_all = next((item for item in male_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
                         if existing_song_male_all:
                             existing_song_male_all['total_score'] += row['total_score']  # total_score 더하기
@@ -464,9 +490,7 @@ class HotTrendingService:
                             new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
                             male_data['ALL'].append(new_row)
                     elif gender == 'FEMALE':
-                        if age_group != 'ALL':
-                            female_data[age_group].append(row.copy())
-                            mixed_data[age_group].append(row.copy())
+                        #female_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
                         existing_song_female_all = next((item for item in female_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
                         if existing_song_female_all:
                             existing_song_female_all['total_score'] += row['total_score']  # total_score 더하기
@@ -474,6 +498,12 @@ class HotTrendingService:
                             new_row = row.copy()
                             new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
                             female_data['ALL'].append(new_row)
+                        
+                    # 특정 성별 - 특정 연령
+                    if gender == 'MALE' and age_group != 'ALL':
+                        male_data[age_group].append(row.copy())
+                    elif gender == 'FEMALE' and age_group != 'ALL':
+                        female_data[age_group].append(row.copy())
 
                 # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
                 for age_group in male_data.keys():
