@@ -170,5 +170,5 @@ class TJCrawlingService:
         return (song_number, song[1], song[2], is_mr, is_live)
     
 
-crawler = TJCrawlingService()
-crawler.crawl_and_save_new_songs()
+# crawler = TJCrawlingService()
+# crawler.crawl_and_save_new_songs()
