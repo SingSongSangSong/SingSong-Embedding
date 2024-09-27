@@ -60,6 +60,23 @@ class TJCrawlingService:
         connection.close()
 
         logger.info(f"{inserted_rows}개의 신곡 정보가 성공적으로 데이터베이스에 저장 되었습니다.")
+    
+    def read_from_db(self):
+        connection = self.setup_db_config()
+        cursor = connection.cursor()
+
+        # 읽기
+        query = """
+            SELECT song_number FROM song_info
+        """
+        
+        cursor.execute(query)  # 쿼리 실행
+        result = cursor.fetchall()  # 결과 가져오기
+
+        cursor.close()
+        connection.close()
+
+        return result  # 결과 반환
 
      
     def crawl_new_songs(self):
@@ -87,8 +104,20 @@ class TJCrawlingService:
         return songs
     
     def crawl_and_save_new_songs(self):
-        songs = self.crawl_new_songs()
-        songs_include_mr_and_live = self.crawl_mr_and_live(songs)
+        new_songs = self.crawl_new_songs()
+        db_song_numbers = self.read_from_db()
+
+        # db에 없는 songs 들만 남긴다
+        db_song_numbers_set = {str(song['song_number']) for song in db_song_numbers}  # DB에서 조회한 song_number를 집합으로 변환
+        #print(db_song_numbers_set)
+        new_songs_filtered = [song for song in new_songs if song[0] not in db_song_numbers_set]
+        logger.info(f"DB에 없는 {len(new_songs_filtered)}개의 신곡을 발견했습니다.")
+        #print(f"DB에 없는 {len(new_songs_filtered)}개의 신곡을 발견했습니다.")
+        if len(new_songs_filtered) == 0:
+            return
+        # MR 및 Live 정보 크롤링
+        songs_include_mr_and_live = self.crawl_mr_and_live(new_songs_filtered)
+        #songs_include_mr_and_live = self.crawl_mr_and_live(new_songs)
         self.save_to_db(songs_include_mr_and_live)
 
     def crawl_mr_and_live(self, songs):
@@ -99,6 +128,7 @@ class TJCrawlingService:
         return return_songs
     
     def crawl_one_mr_and_live(self, song):
+        print(f"db에 없는 {song[0]}, {song[1]}, {song[2]} 정보를 추가로 크롤링합니다.")
         song_number = song[0]
         url = 'https://www.tjmedia.com/tjsong/song_search_list.asp?strType=16&natType=&strText='+str(song_number)+'&strCond=1&strSize05=100'
 
@@ -115,8 +145,10 @@ class TJCrawlingService:
         # song_number가 존재하고, 해당 요소의 텍스트와 일치하는지 확인
         if song_number_element and song_number_element.text.strip() == str(song_number):
             logger.info(f"곡 번호 {song_number}와 일치하는 곡이 발견되었습니다.")
+            #print(f"곡 번호 {song_number}와 일치하는 곡이 발견되었습니다.")
         else:
             logger.info(f"곡 번호 {song_number}와 일치하는 곡을 찾을 수 없습니다.")
+            #print(f"곡 번호 {song_number}와 일치하는 곡을 찾을 수 없습니다.")
             return
 
         # 곡 정보가 담긴 테이블을 찾고, 태그 확인
@@ -133,4 +165,10 @@ class TJCrawlingService:
         # print(f" - Live 태그: {'있음' if is_live else '없음'}")
         # print(f" - MR 태그: {'있음' if is_mr else '없음'}")
 
+        #return (song_number, song[1], song[2], is_mr, is_live)
+
         return (song_number, song[1], song[2], is_mr, is_live)
+    
+
+crawler = TJCrawlingService()
+crawler.crawl_and_save_new_songs()

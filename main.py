@@ -97,7 +97,7 @@ if __name__ == "__main__":
     background_scheduler = BackgroundScheduler(timezone='Asia/Seoul')
     background_scheduler.add_job(hot_trending_service.v2_scheduler, 'cron', minute='50', id='hot_trending_scheduler')
     background_scheduler.add_job(job, 'cron', minute='55', id='user_profile_scheduler')
-    background_scheduler.add_job(crawling_service.crawl_and_save_new_songs, 'cron', day='1', hour='3', minute='0', id='monthly_new_song_scheduler')
+    background_scheduler.add_job(crawling_service.crawl_and_save_new_songs, 'cron', hour='1', minute='0', id='monthly_new_song_scheduler')
     background_scheduler.start()
     logger.info("Background scheduler started")
 
