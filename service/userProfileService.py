@@ -1,15 +1,12 @@
 import pymysql
-from langchain_openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain_core.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from pymilvus import Collection, connections, FieldSchema, CollectionSchema, DataType, utility
-import numpy as np
 import os
 from dotenv import load_dotenv
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.callbacks import StreamingStdOutCallbackHandler
-from langchain_milvus.vectorstores import Milvus
 import logging
 
 # 로깅 설정

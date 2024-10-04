@@ -5,8 +5,10 @@ from service.milvusInsertService import MilvusInsertService
 import logging
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
 from service.langchainServiceGrpc import LangChainServiceGrpc
+from service.langchainServiceAgentGrpc import LangChainServiceAgentGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
+from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import add_LangchainAgentRecommendServicer_to_server
 from service.hotTrendingService import HotTrendingService
 from service.tjCrawlingService import TJCrawlingService
 from db.dbConfig import DatabaseConfig
@@ -30,6 +32,7 @@ def serve_grpc():
 
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), server)
     add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), server)
+    add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), server)
 
     server.add_insecure_port('[::]:50051')
     server.start()
