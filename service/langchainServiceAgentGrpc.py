@@ -1,19 +1,20 @@
 import os
 import logging
 import grpc
-from langchain.agents import AgentExecutor, LLMSingleActionAgent, Tool, AgentOutputParser
+from langchain.agents import AgentExecutor, LLMSingleActionAgent, Tool
 from pymilvus import Collection, connections
 from langchain.chains import LLMChain
 from langchain.chat_models import ChatOpenAI
 from langchain_milvus import Milvus
-from typing import List, Union
 from langchain_openai import OpenAIEmbeddings
 from service.AgentPromptTemplate import AgentPromptTemplate
 from service.customAgentOutputParser import CustomAgentOutputParser
 import traceback
-from proto.langchainAgentRecommend.langchainAgentRecommend_pb2 import LangchainAgentResponse, LangchainAgentRequest, SearchResult
+from proto.langchainAgentRecommend.langchainAgentRecommend_pb2 import LangchainAgentResponse, SearchResult
 from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import LangchainAgentRecommendServicer
-
+from langchain.cache import InMemoryCache
+from langchain.globals import set_llm_cache
+import time
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +28,6 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
         self.collection_name = "singsongsangsong_22286"
         connections.connect(alias="default", host=self.milvus_host, port="19530")
         self.collection = Collection(self.collection_name)
-
         # Define embedding model
         self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
         # Milvus vector store
@@ -38,7 +38,6 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
             text_field="song_name"
         )
         self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 10})  # Max 10 results
-
         # Initialize LLM model
         self.llm = ChatOpenAI(
             temperature=0.5,
@@ -46,6 +45,9 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
             model_name='gpt-4o-mini',
             api_key=self.OPENAI_API_KEY
         )
+        # Initialize and set the cache for the LLM
+        self.llm_cache = InMemoryCache()
+        set_llm_cache(self.llm_cache)
         
         # Define tools
         self.tools = [
@@ -55,7 +57,6 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
                 description="""Use this to retrieve relevant documents from the Milvus collection. For example, 'songs similar to BTS songs', 'songs about break up' or 'dance songs which are relased around 2010s."""
             )
         ]
-        
         # Define prompt template
         self.agent_prompt = AgentPromptTemplate(
             template=AgentPromptTemplate.agent_prompt_template,
@@ -63,21 +64,17 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
             input_variables=["input", "intermediate_steps"],
         )
         self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
-
         self.output_parser = CustomAgentOutputParser()
-
         # Create LLM chain
         llm_chain = LLMChain(llm=self.llm, prompt=self.agent_prompt)
         tool_names = [tool.name for tool in self.tools]
-
         # Create single action agent
         self.agent = LLMSingleActionAgent(
             llm_chain=llm_chain, output_parser=self.output_parser, stop=["\nObservation:"], allowed_tools=tool_names
         )
-
         # Create executor
         self.executor = AgentExecutor.from_agent_and_tools(
-            agent=self.agent, tools=self.tools, verbose=True, max_iterations=5
+            agent=self.agent, tools=self.tools, verbose=True, max_iterations=2
         )
 
     def parse_response_to_json(self, response: str):
@@ -102,6 +99,7 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
         """
         # Run the agent
         response = self.executor.run(query)
+        print("Response: ", response)
 
         # Convert and print the parsed response
         song_list, reason_list = self.parse_response_to_json(response)
@@ -111,12 +109,15 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
     def GetLangchainAgentRecommendation(self, request, context):
         try:
             # 유사한 노래 검색 (song_info_id 리스트가 반환됨)
+            start_time = time.time()
             search_song_list, reason_list = self.run(request.command)  # 유사한 노래 검색 (song_info_id 리스트)
             logger.info(f"Search results: {search_song_list}")
 
             searchResult = []
             for i in range(len(search_song_list)):
                 searchResult.append(SearchResult(songInfoId=int(search_song_list[i]), reason=reason_list[i]))
+            
+            logger.info(f"GetLangchainAgentRecommendation took {time.time() - start_time} seconds")
 
             return LangchainAgentResponse(searchResult=searchResult)
                 
