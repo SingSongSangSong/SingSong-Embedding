@@ -64,7 +64,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
 
             search_results += [doc.metadata['song_info_id'] for doc in results]
 
-        search_results = self.ensure_five_recommendations(search_results)
+        search_results = self.ensure_ten_recommendations(search_results)
         return {"retrieved_data": search_results}
 
     # 2. 기분이나 분위기 기반 검색 (유형 2)
@@ -77,7 +77,7 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
         results = self.retriever.get_relevant_documents(refined_query.content)
         
         search_results = [doc.metadata['song_info_id'] for doc in results]
-        search_results = self.ensure_five_recommendations(search_results)
+        search_results = self.ensure_ten_recommendations(search_results)
         return {"retrieved_data": search_results}
 
     # 3. 특정 연도나 특성 기반 검색 (유형 3)
@@ -90,14 +90,14 @@ class LangChainServiceGrpc(LangchainRecommendServicer):
         results = self.retriever.get_relevant_documents(refined_query.content)
         
         search_results = [doc.metadata['song_info_id'] for doc in results]
-        search_results = self.ensure_five_recommendations(search_results)
+        search_results = self.ensure_ten_recommendations(search_results)
         return {"retrieved_data": search_results}
 
     # 추천 목록을 정확히 5곡으로 맞추는 함수
-    def ensure_five_recommendations(self, recommendation_list):
-        while len(recommendation_list) < 5:
+    def ensure_ten_recommendations(self, recommendation_list):
+        while len(recommendation_list) < 10:
             recommendation_list.append(recommendation_list[-1])  # 마지막 곡을 반복 추가
-        return recommendation_list[:5]
+        return recommendation_list[:]
 
     # LLM을 이용해 입력 타입을 판단하는 함수
     def determine_input_type(self, user_query):
