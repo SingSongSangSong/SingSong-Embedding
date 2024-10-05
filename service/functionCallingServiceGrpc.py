@@ -101,15 +101,12 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             {"role": "user", "content": query}
         ]
 
-        logging.info(f"Query to determine type: {query}")
-
         # Use OpenAI to determine query type
         response = self.openai.beta.chat.completions.parse(
             model="gpt-4o-mini",
             messages=messages,
             response_format=QueryType,
         )
-        logging.info(f"Response from OpenAI: {response}")
 
         # Extract and return query type
         parsed_result = response.choices[0].message.parsed
@@ -130,7 +127,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         
         # Combine the retrieved document descriptions into one text block
         retrieved_data = "\n".join([doc.metadata.get("description") for doc in results])
-        print("Retrieved Data:", retrieved_data)
 
         # Create the prompt using the retrieved data
         prompt_template = PromptTemplate.from_template(
@@ -166,7 +162,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         )
 
         parsed_result = response.choices[0].message.parsed
-        print("Refined Query:", parsed_result.refined_query)
                 
         # Parse the response and return the recommendations
         return parsed_result.refined_query
@@ -179,7 +174,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         query_for_langchain = "Find songs similar to the following songs:"
         for song in songs:
             query_for_langchain += f" '{song['song_name']}' by {song['artist_name']}."
-        logging.info(f"Combined query for multiple song-artist pairs: {query_for_langchain}")
 
         # Step 2: Retrieve relevant documents for each song
         documents = []
@@ -192,7 +186,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
 
         # Step 3: Combine the retrieved data into a single string
         combined_retrieved_data = "\n".join(documents)
-        logging.info(f"Retrieved data for multiple songs: {combined_retrieved_data}")
 
         # Step 4: Create the detailed prompt for multiple song-artist pairs
         prompt_template = PromptTemplate.from_template(
@@ -238,7 +231,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         )
 
         parsed_result = response.choices[0].message.parsed
-        print("Refined Query:", parsed_result.refined_query)
 
         # Step 7: Return the refined query
         return parsed_result.refined_query
@@ -293,16 +285,13 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         Main method to handle various types of user inputs and return recommendations.
         """
         try:
-            logging.info(f"Received query: {query}")
             # Determine the type of query
             query_type, song_names, artist_names = self.determine_query_type(query)
-            logging.info(f"Query type determined by OpenAI: {query_type}")
 
             # Handle the query based on its type
             if query_type == "single_song_artist":
                 # Example: 빅뱅의 뱅뱅뱅
                 results = self.handle_single_song_artist(song_names[0], artist_names[0])
-                print("single_song_artist results:", results)
 
             elif query_type == "multiple_song_artist":
                 # Example: 여러 노래와 가수의 공통점을 기반으로 추천
@@ -310,13 +299,10 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
                     {"song_name": song, "artist_name": artist} for song, artist in zip(song_names, artist_names)
                 ]
                 results = self.handle_multiple_song_artist(songs)
-                print("multiple_song_artist results:", results)
 
             elif query_type == "mood_feature":
                 # Example: 분위기나 테마에 따른 추천
                 results = self.handle_mood_or_feature_query(query)
-                print("mood_feature results:", results)
-
             else:
                 logging.error("Unknown query type.")
                 return None
@@ -325,9 +311,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             song_info_ids = []
             for answer in answers:
                 song_info_ids.append(int(answer.metadata['song_info_id']))
-                print(answer.metadata)
-                print(answer.page_content + " - " + answer.metadata['artist_name'] + " - " + str(answer.metadata['year']) + " - " + answer.metadata['genre'])
-
             return {
                 "song_info_ids": song_info_ids,
             }
@@ -340,8 +323,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         try:
             # 유사한 노래 검색 (song_info_id 리스트가 반환됨)
             search_results = self.run(request.command)  # 유사한 노래 검색 (song_info_id 리스트)
-            logger.info(f"Search results: {search_results}")
-
             return FunctionCallingResponse(songInfoId = search_results["song_info_ids"])
                 
         except Exception as e:
