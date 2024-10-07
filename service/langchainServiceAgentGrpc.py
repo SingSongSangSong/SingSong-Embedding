@@ -4,7 +4,7 @@ import grpc
 from langchain.agents import AgentExecutor, LLMSingleActionAgent, Tool
 from pymilvus import Collection, connections
 from langchain.chains import LLMChain
-from langchain.chat_models import ChatOpenAI
+from langchain_openai.chat_models import ChatOpenAI
 from langchain_milvus import Milvus
 from langchain_openai import OpenAIEmbeddings
 from service.AgentPromptTemplate import AgentPromptTemplate
