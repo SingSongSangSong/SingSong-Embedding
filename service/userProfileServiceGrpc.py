@@ -37,6 +37,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
             anns_field="vector",
             param=search_params,
             limit=top_k,
+            page_retain_order=True,
             offset=offset,
             expr="MR == False",  # MR이 False인 항목만 검색
             output_fields=["song_info_id", "song_name", "artist_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
