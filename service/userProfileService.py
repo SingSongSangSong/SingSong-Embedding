@@ -33,7 +33,7 @@ class UserProfileService:
         )
 
         # Connect to MySQL and Milvus
-        self.db_connection = self.connect_to_db()
+        # self.db_connection = self.connect_to_db()
         connections.connect(alias="default", host=os.getenv("MILVUS_HOST", "milvus-standalone"), port="19530")
         self.collection = Collection("singsongsangsong_22286")
 
@@ -156,7 +156,8 @@ class UserProfileService:
     # 최근 하루 동안 활동한 유저 ID 조회
     def fetch_recent_member_ids(self):
         logger.info("Fetching recent user IDs from the database...")
-        cursor = self.db_connection.cursor()
+        connection = self.connect_to_db()
+        cursor = connection.cursor()
 
         # 최근 하루 동안 활동한 유저들의 ID 조회
         query = """
@@ -169,6 +170,7 @@ class UserProfileService:
         recent_member_ids = [row[0] for row in cursor.fetchall()]
         
         cursor.close()
+        connection.close()
         logger.info(f"Fetched {len(recent_member_ids)} recent user IDs.")
         return recent_member_ids
 
@@ -181,7 +183,8 @@ class UserProfileService:
             logger.warning("No member IDs found. Skipping database query.")
             return {}
 
-        cursor = self.db_connection.cursor()
+        connection = self.connect_to_db()
+        cursor = connection.cursor()
 
         # 특정 유저 ID들에 대한 song_id와 action_score 조회
         query = """
@@ -202,6 +205,7 @@ class UserProfileService:
             user_data[member_id]["scores"].append(score)
         
         cursor.close()
+        connection.close()
         logger.info(f"Fetched actions for {len(user_data)} users.")
         return user_data
 
@@ -260,7 +264,8 @@ class UserProfileService:
     # 성별에 따른 전체 성향 조회
     def fetch_gender_based_actions(self, gender=None):
         logger.info(f"Fetching actions for {'all' if gender is None else gender} users from the database...")
-        cursor = self.db_connection.cursor()
+        connection = self.connect_to_db()
+        cursor = connection.cursor()
 
         # 성별에 따른 모든 유저의 song_id와 action_score를 조회 (가정: member 테이블에 gender 필드 존재)
         if gender is None:
@@ -291,6 +296,7 @@ class UserProfileService:
             scores.append(total_score)
         
         cursor.close()
+        connection.close()
         logger.info(f"Fetched {len(song_ids)} songs for {'all' if gender is None else gender} users.")
         return song_ids, scores
 
