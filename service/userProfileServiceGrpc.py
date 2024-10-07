@@ -26,7 +26,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
         return None  # 프로파일이 없을 경우 None
 
     # 유사도 기반 추천 로직
-    def recommend_similar_songs(self, user_vector, top_k=20, offset=0):
+    def recommend_similar_songs(self, user_vector, top_k=20):
         logger.info("Recommending songs based on user profile vector.")
         search_params = {"metric_type": "COSINE", "params": {"nprobe": 10}}
         user_embedding = np.array(user_vector, dtype=np.float32).reshape(1, -1)
@@ -37,8 +37,6 @@ class UserProfileServiceGrpc(UserProfileServicer):
             anns_field="vector",
             param=search_params,
             limit=top_k,
-            page_retain_order=True,
-            offset=offset,
             expr="MR == False",  # MR이 False인 항목만 검색
             output_fields=["song_info_id", "song_name", "artist_name", "MR", "ssss", "audio_file_url", "album", "song_number"]
         )
@@ -48,10 +46,6 @@ class UserProfileServiceGrpc(UserProfileServicer):
     def CreateUserProfile(self, request, context):
         logger.info(f"Received gRPC request to create user profile for memberId: {request.memberId}, page: {request.page}, gender: {request.gender}")
         try:
-            # 페이지당 항목 수
-            items_per_page = 20
-            offset = (request.page - 1) * items_per_page
-
             # 유저 프로파일 조회
             user_vector = self.get_user_profile(request.memberId)
 
@@ -77,7 +71,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
 
             # 유사도 기반 추천
             logger.info(f"Found user profile for memberId: {request.memberId} or gender: {request.gender}")
-            search_results = self.recommend_similar_songs(user_vector, top_k=items_per_page, offset=offset)
+            search_results = self.recommend_similar_songs(user_vector, top_k=request.page)
 
             # 결과를 gRPC 응답으로 변환
             similar_items = []
