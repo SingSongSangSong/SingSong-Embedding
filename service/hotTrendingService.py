@@ -78,7 +78,7 @@ class HotTrendingService:
                             ma.action_score,
                             ma.gender
                         FROM member_action as ma
-                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
                         AND ma.gender = 'MALE'
                     ) AS subquery
                     GROUP BY subquery.song_info_id
@@ -111,7 +111,7 @@ class HotTrendingService:
                             ma.action_score,
                             ma.gender
                         FROM member_action as ma
-                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
                         AND ma.gender = 'FEMALE'
                     ) AS subquery
                     GROUP BY subquery.song_info_id
@@ -216,7 +216,7 @@ class HotTrendingService:
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
                         END AS age_group
                     FROM member_action as ma
-                    WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                    WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
                     GROUP BY ma.song_info_id, ma.gender, age_group
                 )
                 SELECT
@@ -405,7 +405,7 @@ class HotTrendingService:
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
                             END AS age_group
                         FROM member_action as ma
-                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 1 MONTH)
+                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
                         GROUP BY ma.song_info_id, ma.gender, age_group
                     )
                     SELECT
