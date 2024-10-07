@@ -13,7 +13,6 @@ from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import add_L
 from proto.functionCallingRecommend.functionCallingRecommend_pb2_grpc import add_functionCallingRecommendServicer_to_server
 from service.hotTrendingService import HotTrendingService
 from service.tjCrawlingService import TJCrawlingService
-from db.dbConfig import DatabaseConfig
 from apscheduler.schedulers.background import BackgroundScheduler
 import threading
 from flask import Flask, jsonify  # Flask 임포트
