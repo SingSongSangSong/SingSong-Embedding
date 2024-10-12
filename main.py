@@ -92,10 +92,8 @@ if __name__ == "__main__":
     user_profile_service = UserProfileService()
     user_profile_service.create_user_profile_collection()
     user_profile_service.create_gender_profiles()
-    
     hot_trending_service = HotTrendingService()  # db config, redis config
     hot_trending_service.v2_init()
-
     crawling_service = TJCrawlingService()
 
     # Background scheduler 시작
