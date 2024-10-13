@@ -342,8 +342,11 @@ class HotTrendingService:
             rdb.close()
             logger.info("hot trending 갱신 성공")
 
+        except KeyError as e:
+            logger.error(f"hot trending 갱신 중 KeyError 발생: {str(e)}")
         except Exception as e:
             logger.exception("hot trending 갱신 중 오류 발생")
+            
             
 
     def get_top_20_by_score(self, data_list):
@@ -539,5 +542,7 @@ class HotTrendingService:
                 self.v2_scheduler()
                 logger.info("다음시각 hot trending 추가 완료")
 
+        except KeyError as e:
+            logger.error(f"hot trending 갱신 중 KeyError 발생: {str(e)}")
         except Exception as e:
             logger.exception("hot trending 갱신 중 오류 발생")
