@@ -9,7 +9,7 @@ def run():
         stub = UserProfileStub(channel)
         
         # ProfileRequest 요청
-        request = ProfileRequest(memberId=1, page=1)
+        request = ProfileRequest(memberId=1, page=20, gender="MALE")
         response = stub.CreateUserProfile(request)
         
         # 응답 출력
