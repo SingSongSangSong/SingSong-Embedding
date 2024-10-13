@@ -39,4 +39,4 @@ COPY . .
 EXPOSE 50051
 
 # gRPC 서버 실행
-CMD ["sh", "-c", "ddtrace-run python main.py"]
+CMD ["python", "main.py"]
