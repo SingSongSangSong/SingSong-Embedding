@@ -214,6 +214,7 @@ class HotTrendingService:
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
                             WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
+                            ELSE 'ALL'
                         END AS age_group
                     FROM member_action as ma
                     WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
@@ -406,6 +407,7 @@ class HotTrendingService:
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
                                 WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
+                                ELSE 'ALL'
                             END AS age_group
                         FROM member_action as ma
                         WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
