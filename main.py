@@ -1,6 +1,7 @@
 import grpc
 import logging
 import asyncio
+import signal
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 비동기 스케줄러
 from service.userProfileService import UserProfileService
 from service.milvusInsertService import MilvusInsertService
@@ -24,15 +25,9 @@ user_profile_service = UserProfileService()
 hot_trending_service = HotTrendingService()
 crawling_service = TJCrawlingService()
 
-# # 비동기 Milvus 삽입 작업
-# async def run_milvus_insert_script():
-#     logger.info("Running Milvus insert process...")
-#     milvus_service = MilvusInsertService(collection_name="singsongsangsong_22286")
-#     await milvus_service.run_async(
-#         song_info_path="dataframe/song_info.csv", 
-#         data_path="dataframe/with_ssss_22286_updated5.csv"
-#     )
-#     logger.info("Milvus insert process completed successfully.")
+# 전역 스케줄러와 서버 참조
+scheduler = None
+grpc_server = None
 
 # 동기 작업을 비동기적으로 실행
 async def user_profile_job():
@@ -42,49 +37,61 @@ async def user_profile_job():
 
 async def hot_trending_job():
     logger.info("Running hot trending job.")
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, hot_trending_service.v2_scheduler)
+    await hot_trending_service.v2_scheduler()
     logger.info("Hot trending job completed.")
 
 # gRPC 서버 실행
 async def serve_grpc():
-    server = grpc.aio.server()  # 비동기 gRPC 서버 생성
+    global grpc_server
+    grpc_server = grpc.aio.server()  # 비동기 gRPC 서버 생성
 
     # 서비스 추가
-    add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), server)
-    add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), server)
-    add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), server)
-    add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), server)
+    add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), grpc_server)
+    add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), grpc_server)
+    add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), grpc_server)
+    add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), grpc_server)
 
-    server.add_insecure_port('[::]:50051')
-    await server.start()
+    grpc_server.add_insecure_port('[::]:50051')
+    await grpc_server.start()
     logger.info("gRPC server started on port 50051")
 
-    try:
-        await server.wait_for_termination()  # gRPC 서버 종료 대기
-    except (KeyboardInterrupt, SystemExit):
-        scheduler.shutdown()
-        logger.info("Scheduler and gRPC server stopped.")
+# Graceful Shutdown 핸들러
+async def shutdown():
+    global scheduler, grpc_server
+
+    logger.info("Shutting down gracefully...")
+
+    # 스케줄러 중지
+    if scheduler:
+        scheduler.shutdown(wait=False)
+        logger.info("Scheduler stopped.")
+
+    # gRPC 서버 중지
+    if grpc_server:
+        await grpc_server.stop(5)  # 최대 5초 동안 종료 대기
+        logger.info("gRPC server stopped.")
+
+    logger.info("Shutdown completed.")
+
+# 신호 처리기 등록
+def register_signal_handlers(loop):
+    for signal_name in ('SIGINT', 'SIGTERM'):
+        loop.add_signal_handler(
+            getattr(signal, signal_name),
+            lambda: asyncio.ensure_future(shutdown())
+        )
 
 # 비동기 메인 함수
 async def main():
-    # Milvus 삽입 작업 실행
-    # await run_milvus_insert_script()
-
-    # 사용자 프로필 초기화 작업
-    # user_profile_service.create_user_profile_collection()
-    # user_profile_service.create_gender_profiles()
+    global scheduler
 
     # HotTrendingService 및 크롤링 서비스 초기화
-    hot_trending_service.v2_init()
+    await hot_trending_service.v2_init()
 
     # 비동기 스케줄러 설정 및 시작
-    global scheduler
     scheduler = AsyncIOScheduler(timezone='Asia/Seoul')
-    # scheduler.add_job(hot_trending_job, 'cron', minute='50', id='hot_trending_scheduler')
-    scheduler.add_job(hot_trending_job, 'cron', minute='38', id='hot_trending_scheduler')
-    # scheduler.add_job(user_profile_job, 'cron', hour='03', minute='55', id='user_profile_scheduler')
-    scheduler.add_job(user_profile_job, 'cron', minute='38', id='user_profile_scheduler')
+    scheduler.add_job(hot_trending_job, 'cron', minute='50', id='hot_trending_scheduler')
+    scheduler.add_job(user_profile_job, 'cron', hour='03', minute='55', id='user_profile_scheduler')
     scheduler.add_job(crawling_service.crawl_and_save_new_songs, 'cron', hour='11', minute='0', id='daily_new_song_scheduler')
     scheduler.start()
     logger.info("Background scheduler started")
@@ -92,6 +99,20 @@ async def main():
     # gRPC 서버 시작
     await serve_grpc()
 
+    # gRPC 서버 종료 대기
+    await grpc_server.wait_for_termination()
+
 if __name__ == "__main__":
+    # 이벤트 루프 가져오기
+    loop = asyncio.get_event_loop()
+
+    # 신호 처리기 등록
+    register_signal_handlers(loop)
+
     # 비동기 메인 함수 실행
-    asyncio.run(main())
+    try:
+        loop.run_until_complete(main())
+    finally:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.close()
+        logger.info("Event loop closed.")

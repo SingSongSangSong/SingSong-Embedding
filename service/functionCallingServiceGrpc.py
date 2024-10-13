@@ -137,19 +137,19 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
                 
                 {retrieved_data}
                 
-                Your task is to refine the user's query by analyzing the common characteristics of these songs, such as their genre, tempo, mood, vocal style, instrumentation, and era. Ensure that the recommendations are not limited to songs by the same artist. 
+                Your task is to refine the user's query by analyzing the common characteristics of these songs, such as their genre, tempo, mood, vocal style, instrumentation, and era. Ensure that the recommendations are not limited to songs by the same artist.
 
-                Specifically, you should consider shared attributes such as energy level (high-energy or calm), instruments used (e.g., guitar, synthesizer, piano), vocal type (e.g., male or female vocals, solo or group), production style (e.g., acoustic, electronic), and mood (e.g., upbeat, melancholic, nostalgic).
+                **Make sure that all recommended songs are from the 2000s, 2010s. and 2020s ** Specifically, analyze shared attributes such as energy level (high-energy or calm), instruments used (e.g., guitar, synthesizer, piano), vocal type (e.g., male or female vocals, solo or group), production style (e.g., acoustic, electronic), and mood (e.g., upbeat, melancholic, nostalgic).
 
-                Then, provide a refined query suggesting songs with similar overall characteristics, even if they are from different artists or slightly different genres.
+                Then, provide a refined query suggesting songs with similar overall characteristics, even if they are from different artists or slightly different genres. **However, ensure the songs are from the 2000s or later.**
 
                 **Important**: You must output the refined query in **one single, well-structured sentence**. The format of the output must exactly follow the example below:
 
-                - **Refined Query**: Find songs that are <refined characteristics>, featuring <key shared features>, and explore <themes/moods>.
+                - **Refined Query**: Find songs from the 2010s or later that are <refined characteristics>, featuring <key shared features>, and explore <themes/moods>.
 
                 Here is an example of the expected format:
-                
-                - Refined Query: Find songs that are in the ballad genre, featuring male solo vocals with a calm and nostalgic mood, moderate tempo, and soft instrumental textures, exploring themes of love and breakups.
+
+                - Refined Query: Find songs from the 2010s or later that are in the ballad genre, featuring male solo vocals with a calm and nostalgic mood, moderate tempo, and soft instrumental textures, exploring themes of love and breakups.
                 """
             )
 
@@ -197,36 +197,36 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
 
             # Step 4: Create the detailed prompt for multiple song-artist pairs
             prompt_template = PromptTemplate.from_template(
-                """
-                You are a music recommendation assistant. The user is asking for songs similar to the following song-artist pairs:
+            """
+            You are a music recommendation assistant. The user is asking for songs similar to the following song-artist pairs:
 
-                {query_for_langchain}
-                
-                Below are descriptions of songs that were retrieved from a song database based on these song-artist pairs:
-                
-                {combined_retrieved_data}
-                
-                Your task is to refine the query by focusing on the **common characteristics** shared between these songs. Analyze and describe the following aspects:
-                
-                - Genre
-                - Tempo
-                - Mood
-                - Vocal style
-                - Instrumentation
-                - Era
-                
-                Ensure that the recommendations are not limited to songs by the same artists. Explore and include similar characteristics across different artists and genres, and avoid focusing too much on a single song or artist.
+            {query_for_langchain}
+            
+            Below are descriptions of songs that were retrieved from a song database based on these song-artist pairs:
+            
+            {combined_retrieved_data}
+            
+            Your task is to refine the query by focusing on the **common characteristics** shared between these songs. Analyze and describe the following aspects:
 
-                Specifically, identify **common traits** such as energy level (high-energy or calm), instruments used (e.g., guitar, synthesizer, piano), vocal type (e.g., male or female vocals, solo or group), production style (e.g., acoustic, electronic), and mood (e.g., upbeat, melancholic, nostalgic).
+            - Genre
+            - Tempo
+            - Mood
+            - Vocal style
+            - Instrumentation
+            - Era
+            
+            **Make sure that all recommended songs are from the 2000s, 2010s or later.** The recommendations should explore and include similar characteristics across different artists and genres, and avoid focusing too much on a single song or artist.
 
-                Then, refine the query to suggest songs with similar **overall characteristics**, even if they are from different artists or slightly different genres. Ensure that your refined query combines the most important attributes from each song in a balanced manner, without focusing exclusively on one artist or song.
+            Specifically, identify **common traits** such as energy level (high-energy or calm), instruments used (e.g., guitar, synthesizer, piano), vocal type (e.g., male or female vocals, solo or group), production style (e.g., acoustic, electronic), and mood (e.g., upbeat, melancholic, nostalgic).
 
-                **Important**: The refined query should list out the combined traits of the songs and provide a diverse set of recommendations. Output the final refined query in **one well-structured sentence**.
+            Then, refine the query to suggest songs with similar **overall characteristics**, even if they are from different artists or slightly different genres. Ensure that your refined query combines the most important attributes from each song in a balanced manner, without focusing exclusively on one artist or song. 
 
-                FORMAT:
-                - **Refined Query**: <refined_query>
-                """
-            )
+            **Important**: The refined query should list out the combined traits of the songs and provide a diverse set of recommendations. Output the final refined query in **one well-structured sentence**.
+
+            FORMAT:
+            - **Refined Query**: Find songs from the 2010s or later that are <refined characteristics>, featuring <key shared features>, and explore <themes/moods>.
+            """
+        )
 
             # Step 5: Format the prompt with the combined query and retrieved data
             prompt = prompt_template.format(query_for_langchain=query_for_langchain, combined_retrieved_data=combined_retrieved_data)
@@ -270,9 +270,11 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
                     "The output must be in a format like below:\n"
                     "refiend query: <refined_query>"
                 )},
-                {"role": "user", "content": (
+                {"role": "user", "content": 
+                 (
                     f"User query: {query}\n"
-                    "Refine the above query by adding detailed musical elements like genre, mood, tempo, era, and any other relevant characteristics."
+                    "Refine the above query by adding detailed musical elements like genre, mood, tempo, era, and any other relevant characteristics. "
+                    "Ensure that the recommendations are strictly for songs from the 2000s or later."
                 )}
             ]
 
