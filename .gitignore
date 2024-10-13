@@ -170,3 +170,4 @@ embedEtcd.yaml
 user.yaml
 dataframe/*
 *.csv
+milvus-docker-compose.yaml
