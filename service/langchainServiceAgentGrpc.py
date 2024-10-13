@@ -12,7 +12,7 @@ from service.customAgentOutputParser import CustomAgentOutputParser
 import traceback
 from proto.langchainAgentRecommend.langchainAgentRecommend_pb2 import LangchainAgentResponse, SearchResult
 from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import LangchainAgentRecommendServicer
-from langchain.cache import InMemoryCache
+from langchain_community.cache import InMemoryCache
 from langchain.globals import set_llm_cache
 import time
 
