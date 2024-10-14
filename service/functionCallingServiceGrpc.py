@@ -156,8 +156,6 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             # Format the template with actual retrieved data
             prompt = prompt_template.format(query=query, retrieved_data=retrieved_data)
 
-
-            
             # Now, pass the formatted prompt (as a string) to the LLM
             response = await self.asyncOpenai.beta.chat.completions.parse(
                 model="gpt-4o-mini",

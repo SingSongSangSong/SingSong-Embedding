@@ -35,7 +35,7 @@ class UserProfileService:
             )
 
             # Connect to Milvus
-            connections.connect(alias="cronUserProfile", host=os.getenv("MILVUS_HOST", "milvus-standalone"), port="19530")
+            connections.connect(alias="default", host=os.getenv("MILVUS_HOST", "milvus-standalone"), port="19530")
             self.collection = Collection("singsongsangsong_22286")
 
             # Embedding model for user profiles
