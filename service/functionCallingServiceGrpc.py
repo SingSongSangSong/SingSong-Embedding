@@ -39,7 +39,7 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
             self.milvus_host = os.getenv("MILVUS_HOST", "localhost")
             self.collection_name = "singsongsangsong_22286"
-            connections.connect(alias="functionCallingGrpc", host=self.milvus_host, port="19530")
+            connections.connect(host=self.milvus_host, port="19530")
             self.collection = Collection(self.collection_name)
             self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
             self.openai = OpenAI(api_key=self.OPENAI_API_KEY)
