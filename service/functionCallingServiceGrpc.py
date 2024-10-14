@@ -39,7 +39,7 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
             self.milvus_host = os.getenv("MILVUS_HOST", "localhost")
             self.collection_name = "singsongsangsong_22286"
-            connections.connect(host=self.milvus_host, port="19530")
+            connections.connect(alias="FunctionCallingGrpc", host=self.milvus_host, port="19530")
             self.collection = Collection(self.collection_name)
             self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
             self.openai = OpenAI(api_key=self.OPENAI_API_KEY)
@@ -125,7 +125,7 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             query = f"Find songs similar to {song_name} by {artist_name}"
 
             # Retrieve relevant documents from Milvus (assuming `retriever` is set up for Milvus)
-            results = await self.vectorstore.asimilarity_search(query, k=1, expr="MR == False")  # Example retriever setup
+            results = await self.vectorstore.asimilarity_search(query, k=1)  # Example retriever setup
             
             # Combine the retrieved document descriptions into one text block
             retrieved_data = "\n".join([doc.metadata.get("description") for doc in results])
@@ -155,6 +155,9 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
 
             # Format the template with actual retrieved data
             prompt = prompt_template.format(query=query, retrieved_data=retrieved_data)
+
+            logging.info(f"Prompt template: {prompt}")
+
 
             # Now, pass the formatted prompt (as a string) to the LLM
             response = await self.asyncOpenai.beta.chat.completions.parse(
@@ -228,6 +231,8 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
 
             # Step 5: Format the prompt with the combined query and retrieved data
             prompt = prompt_template.format(query_for_langchain=query_for_langchain, combined_retrieved_data=combined_retrieved_data)
+
+            logging.info(f"Prompt template: {prompt}")
             
             # Step 6: Use the LLM to refine the query
             response = await self.asyncOpenai.beta.chat.completions.parse(
@@ -301,7 +306,9 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
         """
         try:
             try:
+                logging.info(f"Received query: {query}")
                 query_type, song_names, artist_names = await self.determine_query_type(query)
+                logging.info(f"Query type: {query_type}, Song names: {song_names}, Artist names: {artist_names}")
             except Exception as e:
                 logger.error(f"Failed to determine query type: {e}")
                 return FunctionCallingResponse(songInfoId=[])
@@ -328,6 +335,7 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
                 logging.error("Unknown query type.")
                 return None
             
+            logging.info(f"Refined query: {results}")
             answers = await self.vectorstore.asimilarity_search(results, k=10, expr="MR == False")
             song_info_ids = []
             for answer in answers:
