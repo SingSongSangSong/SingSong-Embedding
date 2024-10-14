@@ -47,8 +47,9 @@ async def serve_grpc():
 
     # 서비스 추가
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), grpc_server)
-    add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), grpc_server)
-    add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), grpc_server)
+    ## 사용하지 않는 서비스 주석 처리
+    # add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), grpc_server)
+    # add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), grpc_server)
     add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), grpc_server)
 
     grpc_server.add_insecure_port('[::]:50051')
