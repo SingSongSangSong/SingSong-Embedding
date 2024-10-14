@@ -37,7 +37,7 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
     def __init__(self):
         try:
             self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-            self.milvus_host = os.getenv("MILVUS_HOST", "localhost")
+            self.milvus_host = os.getenv("MILVUS_HOST", "milvus-standalone")
             self.collection_name = "singsongsangsong_22286"
             connections.connect(alias="FunctionCallingGrpc", host=self.milvus_host, port="19530")
             self.collection = Collection(self.collection_name)
