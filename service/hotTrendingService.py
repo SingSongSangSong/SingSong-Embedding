@@ -314,7 +314,7 @@ class HotTrendingService:
             await self.save_to_redis(redis, formatted_string_for_one_hour_later, female_data, "FEMALE")
             await self.save_to_redis(redis, formatted_string_for_one_hour_later, mixed_data, "MIXED")
 
-            redis.close()
+            await redis.close()
             logger.info("hot trending 갱신 성공")
 
         except KeyError as e:
