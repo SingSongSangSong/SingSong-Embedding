@@ -224,7 +224,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             logger.error(f"Failed to determine query type: {e}")
             return None, [], []
 
-    async def handle_single_song_artist(self, song_name: list[str], artist_name: list[str]):
+    async def handle_single_song_artist(self, input_song_name: list[str], input_artist_name: list[str]):
         """
         Handles queries to find similar songs based on a song and artist using Milvus DB and LCEL-style chain.
         """
@@ -232,81 +232,132 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             # Create the query
             query = ""
 
-            print("song_name type: " + str(type(song_name)))
-            print("artist_name type: " + str(type(artist_name)))
-            print("song_name: " + str(song_name))
-            print("artist_name: " + str(artist_name))
-
             try:
-                if len(song_name) >= 1:
-                    query += f"Title : {song_name[0]}"
-                if len(artist_name) >= 1:
-                    query += f"Artist : {artist_name[0]}"
+                if len(input_song_name) >= 1:
+                    query += f"Title : {input_song_name[0]} "
+                if len(input_artist_name) >= 1:
+                    query += f"Artist : {input_artist_name[0]} "
                 print("query: " + query)
             except Exception as e:
                 logger.error(f"Failed to create query: {e}")
                 return None
-
+            
+            ## 노래 제목은 입력을 하였는데 가수 이름을 입력하지 않은 경우
             try:
-                # Retrieve relevant documents from Milvus (assuming `retriever` is set up for Milvus)
-                results = await self.retriever.ainvoke(query, )  # Example retriever setup
-                # Print search results
-                if results:
-                    print(f"Search Results: {results}")
-                else:
-                    print("No results found.")
+                if len(input_song_name) >= 1 and len(input_artist_name) == 0:
+                    # If only the song name is provided, search for similar songs based on the song name
+                    results = await self.vectorstore.as_retriever(search_kwargs=dict(k=20)).ainvoke(query)
+                    retrieved_data = [doc.metadata.get("song_info_id") for doc in results]
+                    return retrieved_data, "오로지 노래 제목만 입력하셨습니다. 노래 제목과 가수 이름을 함께 입력해주세요. 노래 제목과 가수 이름을 함께 입력하면 더 정확한 결과를 제공할 수 있습니다."
+                elif len(input_song_name) == 0 and len(input_artist_name) >= 1:
+                    # If only the artist name is provided, search for similar songs based on the artist name
+                    results = await self.vectorstore.as_retriever(search_kwargs=dict(k=20)).ainvoke(query)
+                    retrieved_data = [doc.metadata.get("song_info_id") for doc in results]
+                    return retrieved_data, "오로지 가수 이름만 입력하셨습니다. 노래 제목과 가수 이름을 함께 입력해주세요. 노래 제목과 가수 이름을 함께 입력하면 더 정확한 결과를 제공할 수 있습니다."
             except Exception as e:
-                logger.error(f"Failed to retrieve documents: {e}")
+                logger.error(f"Failed to create query: {e}")
                 return None
+            
+            ## 정상적으로 노래 제목과 가수 이름을 입력한 경우
             try:
-                result2 = await self.vectorstore.asimilarity_search(query, k=1)
-                if result2:
-                    print(f"Search Results: {result2}")
-                else:
+                # 노래 제목과 가수에 알맞는 노래 정보를 찾기 위해 Milvus DB에서 검색
+                results = await self.vectorstore.as_retriever(search_kwargs=dict(k=1)).ainvoke(query)  # Example retriever setup
+                # Print search results
+                if not results:
                     print("No results found.")
+                    return None
             except Exception as e:
                 logger.error(f"Failed to retrieve documents: {e}")
                 return None
             
-            # # Combine the retrieved document descriptions into one text block
-            # retrieved_data = "\n".join([doc.metadata.get("description") for doc in results])
+            ## 만약 노래 제목과 가수 이름을 입력하였을 때 결과가 존재하는 경우
+            if results and len(results) > 0:
+                # Combine the retrieved document descriptions into one text block
+                tags = []
 
-            # # Create the prompt using the retrieved data
-            # prompt_template = PromptTemplate.from_template(
-            #     """
-            #     You are a music recommendation assistant. The user is asking for songs similar to the following query: "{query}". Below are descriptions of songs that were retrieved from a song database based on this query:
+                ## 정보들을 가져온다
+                genre = results[0].metadata.get("genre")
+                singer_type = results[0].metadata.get("singer_type")
+                artist_name = results[0].metadata.get("artist_name")  # Assuming artist_name is part of the metadata
+                song_name = results[0].page_content
+                year = results[0].metadata.get("year")
+                country = results[0].metadata.get("country")
+                print(f"Genre: {genre} | Singer Type: {singer_type} | Artist Name: {artist_name} | Song Name: {song_name} | Year: {year} | Country: {country}")
+                # lyrics_summary = results[0].metadata.get("lyrics_summary")
+                # artist_gender = results[0].metadata.get("artist_gender")  # Assuming this is part of the metadata
+                # octave = results[0].metadata.get("octave")  # Assuming this is part of the metadata
+
+                ## Extract Tag For Situation
+                # classics = results[0].metadata.get("classics")
+                # finale = results[0].metadata.get("finale")
+                # high = results[0].metadata.get("high")
+                # low = results[0].metadata.get("low")
+                # rnb = results[0].metadata.get("rnb")
+                # breakup = results[0].metadata.get("breakup")
+                # ballads = results[0].metadata.get("ballads")
+                # dance = results[0].metadata.get("dance")
+                # duet = results[0].metadata.get("duet")
+                # ssum = results[0].metadata.get("ssum")
+                # carol = results[0].metadata.get("carol")
+                # rainy = results[0].metadata.get("rainy")
+                # pop = results[0].metadata.get("pop")
+                # office = results[0].metadata.get("office")
+                # wedding = results[0].metadata.get("wedding")
+                # military = results[0].metadata.get("military")
+
+                # Create the main content block, adding only if the value exists
+                content = ""
                 
-            #     {retrieved_data}
-                
-            #     Your task is to refine the user's query by analyzing the common characteristics of these songs, such as their genre, tempo, mood, vocal style, instrumentation, and era. Ensure that the recommendations are not limited to songs by the same artist.
+                if genre:
+                    content += f"Genre: {genre}\n"
+                if year:
+                    content += f"Year: {year}\n"
+                if country:
+                    content += f"Country: {country}\n"
+                if singer_type:
+                    content += f"Artist Type: {singer_type}\n"
+                # if artist_gender:
+                #     content += f"Artist Gender: {artist_gender}\n"
+                # if octave:
+                #     content += f"Octave: {octave}\n"
+                # if lyrics_summary:
+                #     content += f"Lyrics Summary: {lyrics_summary}\n"
 
-            #     **Make sure that all recommended songs are from the 2000s, 2010s. and 2020s ** Specifically, analyze shared attributes such as energy level (high-energy or calm), instruments used (e.g., guitar, synthesizer, piano), vocal type (e.g., male or female vocals, solo or group), production style (e.g., acoustic, electronic), and mood (e.g., upbeat, melancholic, nostalgic).
+                # Add tags based on metadata
+                # if classics: tags.append("모두가 인정한 명곡입니다.")
+                # if finale: tags.append("마무리 곡으로 자주 선택됩니다.")
+                # if low: tags.append("최고음역대가 매우 낮은 음역대의 곡입니다.")
+                # if high: tags.append("최고음역대가 매우 높은 것이 돋보이는 곡입니다.")
+                # if rnb: tags.append("R&B 요소를 포함하고 있습니다.")
+                # if ballads: tags.append("발라드 장르에 속한 곡입니다.")
+                # if breakup: tags.append("이별의 감정을 담고 있습니다.")
+                # if dance: tags.append("댄스 리듬이 가미된 곡입니다.")
+                # if duet: tags.append("친구와 듀엣으로 부르기 좋은 곡입니다.")
+                # if ssum: tags.append("썸 타는 상황에 어울리는 곡입니다.")
+                # if carol: tags.append("크리스마스 분위기를 담고 있습니다.")
+                # if rainy: tags.append("비 오는 날 듣기 좋은 곡입니다.")
+                # if pop: tags.append("팝송입니다.")
+                # if office: tags.append("사회생활할 때 아주 좋은 노래입니다. 나이가 있으신 분들이 알만한 노래로, 뽕짝의 느낌이 강하고 분위기를 살리기 위한 곡입니다.")
+                # if wedding: tags.append("결혼식에서 사용하기 좋은, 누군가를 축하할 때 적합한 곡입니다.")
+                # if military: tags.append("군대와 관련된 노래입니다.")
 
-            #     Then, provide a refined query suggesting songs with similar overall characteristics, even if they are from different artists or slightly different genres. **However, ensure the songs are from the 2000s or later.**
+                # Combine tags into a "Situations" block
+                # if tags:
+                #     content += f"Situations:\n{' '.join(tags)}"
 
-            #     **Important**: You must output the refined query in **one single, well-structured sentence**. The format of the output must exactly follow the example below:
+                # Search With Milvus DB for Similar Songs in Two Way - 1. Using Artist Name 2. Using Features
+                aritst_query = f"Artist : {artist_name}"
+                with_artist_info = await self.vectorstore.asimilarity_search_with_score(aritst_query, k=10)
+                with_feature_info = await self.vectorstore.asimilarity_search_with_score(content, k=10)
 
-            #     - **Refined Query**: Find songs from the 2010s or later that are <refined characteristics>, featuring <key shared features>, and explore <themes/moods>.
+                #Combine the results from both searches
+                song_info_ids_artist_info = [(artist_info[0].metadata.get('song_info_id'), artist_info[1]*10) for artist_info in with_artist_info]
+                song_info_ids_feature_info = [(feature_info[0].metadata.get('song_info_id'), feature_info[1]*10) for feature_info in with_feature_info]
 
-            #     Here is an example of the expected format:
-
-            #     - Refined Query: Find songs from the 2010s or later that are in the ballad genre, featuring male solo vocals with a calm and nostalgic mood, moderate tempo, and soft instrumental textures, exploring themes of love and breakups.
-            #     """
-            # )
-
-            # # Format the template with actual retrieved data
-            # prompt = prompt_template.format(query=query, retrieved_data=retrieved_data)
-
-            # logging.info(f"Prompt template: {prompt}")
-            # # Now, pass the formatted prompt (as a string) to the LLM
-            # response = await self.asyncOpenai.beta.chat.completions.parse(
-            #     model="gpt-4o-mini",
-            #     messages=[{"role": "system", "content": prompt}],
-            #     response_format=RefineQuery,
-            # )
-            # parsed_result = response.choices[0].message.parsed
-                    
-            # Parse the response and return the recommendations
+                # Combine the results from both searches
+                song_info_ids = song_info_ids_artist_info + song_info_ids_feature_info
+                return song_info_ids, "유사한 노래를 찾았습니다."
+            
             return None
         except Exception as e:
             logger.error(f"Error handling single song-artist query: {e}")
@@ -320,13 +371,13 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             # Step 1: Build the combined query for all the song-artist pairs
             query_for_langchain = "Find songs similar to the following songs:"
             for song in songs:
-                query_for_langchain += f" '{song['song_name']}' by {song['artist_name']}."
+                query_for_langchain += f"Title: {song['song_name']} \n Aritst: {song['artist_name']}."
 
             # Step 2: Retrieve relevant documents for each song
             documents = []
             for song in songs:
-                query = f"Find songs similar to {song['song_name']} by {song['artist_name']}"
-                results = await self.get_relevant_documents(query, 1)
+                query = f"Title: {song['song_name']} \n Aritst: {song['artist_name']}"
+                results = await self.vectorstore.asimilarity_search(query, 1)
                 # Combine the descriptions from each result
                 retrieved_data = "\n".join([doc.metadata.get("description") for doc in results])
                 documents.append(retrieved_data)
@@ -404,7 +455,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 query_type, Results = await self.determine_query_type(query)
                 logging.info(f"Results: {Results}")
                 if query_type == "single_song_artist":
-                    return await self.handle_single_song_artist(Results.song_name, Results.artist_name)
+                    song_info_ids, message = await self.handle_single_song_artist(Results.song_name, Results.artist_name)
+                elif query_type == "multiple_song_artist":
+                    refined_query = await self.handle_multiple_song_artist(Results)
             except Exception as e:
                 logger.error(f"Failed to determine query type: {e}")
                 return FunctionCallingWithTypesResponse(songInfoId=[])
@@ -431,7 +484,8 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 context.set_code(grpc.StatusCode.INTERNAL)
                 context.set_details("No valid search results")
                 return FunctionCallingWithTypesResponse(songInfoId=[])
-            return FunctionCallingWithTypesResponse(songInfoId = search_results["song_info_ids"])
+            # return FunctionCallingWithTypesResponse(songInfoId = search_results["song_info_ids"])
+            return FunctionCallingWithTypesResponse(songInfoId = [])
                 
         except Exception as e:
             logger.error(f"Error during GetFunctionCallingWithTypesRecommendation: {e}")

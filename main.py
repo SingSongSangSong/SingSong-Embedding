@@ -7,9 +7,9 @@ from service.userProfileService import UserProfileService
 from service.milvusInsertService import MilvusInsertService
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
 from service.langchainServiceGrpc import LangChainServiceGrpc
-from service.langchainServiceAgentGrpc import LangChainServiceAgentGrpc
+from service.asyncLangchainAgentWithTypes import LangChainServiceAgentGrpc
 from service.functionCallingServiceGrpc import FunctionCallingServiceGrpc
-from service.funtionCallingWithTenTypes import FunctionCallingWithTypesServiceGrpc
+from service.funtionCallingWithTypes import FunctionCallingWithTypesServiceGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
 from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
 from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import add_LangchainAgentRecommendServicer_to_server
@@ -51,7 +51,7 @@ async def serve_grpc():
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), grpc_server)
     ## 사용하지 않는 서비스 주석 처리
     # add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), grpc_server)
-    # add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), grpc_server)
+    add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), grpc_server)
     add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), grpc_server)
     add_FunctionCallingWithTypesRecommendServicer_to_server(FunctionCallingWithTypesServiceGrpc(), grpc_server)
 
