@@ -18,7 +18,7 @@ def run():
             memberId=8,  # 예시로 memberId 8을 사용
             gender='MALE',
             year='2020',
-            command="싸이의 어땟을까 같은 노래 추천해줘"  # 서버에 전달할 명령
+            command="2013년 노래 추천해줘"  # 서버에 전달할 명령
         )
 
         # 서버에 요청을 보내고 응답 받기

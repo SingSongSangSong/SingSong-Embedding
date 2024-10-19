@@ -15,6 +15,10 @@ import os
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.callbacks import StreamingStdOutCallbackHandler
 from langchain_milvus import Milvus
+from service.functionCallingPrompts import PromptsForFunctionCalling, ExtractCommonTraitService
+from langchain.prompts import PromptTemplate
+import aiomysql
+import random
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -33,11 +37,21 @@ class QueryType(BaseModel):
     gender : str
     year : str
     genre : str
-    situation : str
+    situation : List[str]
 
 class RefineQuery(BaseModel):
     refined_query: str
 
+octave_info_list = [
+    '1옥타브도', '1옥타브도#', '1옥타브레', '1옥타브레#', '1옥타브미', '1옥타브파', '1옥타브파#', '1옥타브솔', '1옥타브솔#', '1옥타브라', '1옥타브라#', '1옥타브시',
+    '2옥타브도', '2옥타브도#', '2옥타브레', '2옥타브레#', '2옥타브미', '2옥타브파', '2옥타브파#', '2옥타브솔', '2옥타브솔#', '2옥타브라', '2옥타브라#', '2옥타브시',
+    '3옥타브도', '3옥타브도#', '3옥타브레', '3옥타브레#', '3옥타브미', '3옥타브파', '3옥타브파#', '3옥타브솔', '3옥타브솔#', '3옥타브라', '3옥타브라#', '3옥타브시',
+    '4옥타브도', '4옥타브도#', '4옥타브레', '4옥타브레#', '4옥타브미', '4옥타브파', '4옥타브파#', '4옥타브솔', '4옥타브솔#', '4옥타브라', '4옥타브라#', '4옥타브시',
+    '5옥타브도', '5옥타브도#', '5옥타브레'
+]
+
+situation_list = ['classics', 'ssum', 'breakup', 'carol', 'finale', 'dance', 'duet', 'rainy', 'office', 'wedding', 'military']
+genre_list = ["국악", "발라드", "록/메탈", "댄스", "성인가요/트로트", "포크/블루스", "키즈", "창작동요", "국내영화", "국내드라마", "랩/힙합", "R&B/Soul", "인디음악", "애니메이션/웹툰", "만화", "교과서동요", "국외영화", "POP", "클래식", "크로스오버", "J-POP", "CCM", "게임", "컨트리", "재즈", "보컬재즈", "포크", "블루스", "일렉트로니카", "월드뮤직", "애시드/퓨전/팝", "국내뮤지컬"]
 class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServicer):
     def __init__(self):
         try:
@@ -64,151 +78,40 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 text_field="song_name"
             )
             self.retriever = self.vectorstore.as_retriever()
+            self.db_host = os.getenv('DB_HOST')
+            self.db_user = os.getenv('DB_USER')
+            self.db_password = os.getenv('DB_PASSWORD')
+            self.db_database = os.getenv('DB_DATABASE')
+            self.db_port = 3306
         except Exception as e:
             logger.error(f"Initialization failed: {e}")
+    
+    async def setup_db_config(self):
+        try:
+            # 비동기 MySQL 연결 설정
+            pool = await aiomysql.create_pool(
+                host=self.db_host,
+                user=self.db_user,
+                password=self.db_password,
+                db=self.db_database,
+                port=self.db_port,
+                charset='utf8mb4',
+                cursorclass=aiomysql.DictCursor,
+                autocommit=False  # 자동 커밋 설정
+            )
+            logger.info("DB 연결 성공")
+            return pool
+
+        except aiomysql.MySQLError as e:
+            logger.error(f"MySQL 연결 실패: {e}")
+            raise
     
     async def determine_query_type(self, query: str):
         """
         Ask OpenAI to determine the type of query (specific song/artist, mood/genre, or specific feature).
         """
         try:
-            messages = [
-                {"role": "system", "content": """
-                You are an assistant that categorizes user inputs into specific types of song recommendations and extracts important information.
-
-                Follow these guidelines for classifying the query into one of the following nine categories and extracting relevant information, ensuring all relevant fields are extracted even if the information is not provided.
-
-                1. **Single Song/Artist Query:**
-                    - If the user input contains either a specific song title, an artist name, or both, asking for similar songs.
-                    - If both a song title and artist name are mentioned, treat it as a full song-artist query.
-                    - If only a song title or artist name is mentioned, return recommendations based on the available information.
-                    - **Extract**: song name, artist name (If not provided, return an empty list `[]` or None).
-                    - **For example**: 
-                        - "버즈의 가시나 같은 노래 추천해줘".
-                        - "추억은 만남보다 이별에 남아 같은 노래 찾아줘".
-                        - "엠씨더맥스 노래 추천해줘".
-                    - Output query type as 'single_song_artist'.
-
-                2. **Multiple Song-Artist Pairs Query:**
-                    - If the user provides multiple song-artist pairs or only song titles or artist names and is asking for recommendations based on the common features between those pairs.
-                    - **Extract**: all song names, all artist names (If not provided, return an empty list `[]` or None).
-                    - **For example**:
-                        - "Recommend me songs like 'Bang Bang Bang' by BigBang and 'Thorn' by Buzz".
-                        - "마이클 잭슨의 Thriller랑 퀸의 Bohemian Rhapsody 같은 곡 추천해줘".
-                        - "아이유와 태연의 노래 추천해줘".
-                        - "가시랑 거짓말 같은 노래 추천해줘".
-                    - Output query type as 'multiple_song_artist'.
-
-                3. **Octave/Key-based Query:**
-                    - If the user mentions specific octaves, vocal ranges (high or low), or difficulty related to singing (e.g., easy or hard songs).
-                    - The query might involve asking for songs with specific vocal demands, such as high-pitched, low-pitched, or songs in a particular octave.
-                    - **Extract**: octave information, vocal range (high/low) (If not provided, return `None`).
-                    - **For example**:
-                        - "노래방 인기차트 중에서 남자가 부르기 쉬운, 음역대 낮은 노래들".
-                        - "최고음 2옥타브 시 노래 추천해줘".
-                        - "고음 어려운 곡 추천해줘".
-                        - "쉬운 발라드 추천해줘".
-                    - Output query type as 'octave_key'.
-
-                4. **Octave with Song/Artist Query:**
-                    - If the user provides both a specific song and mentions octaves or key changes.
-                    - **Extract**: song name, artist name, octave information (If not provided, return an empty list `[]` or `None`).
-                    - **For example**:
-                        - "김연우의 '내가 너의 곁에 잠시 살았다는걸' 정도의 음역대의 노래 추천해줘".
-                        - "Lower the key for 'Imagine' by John Lennon".
-                    - Output query type as 'song_artist_octave'.
-
-                5. **Vocal Range (High/Low) Query:**
-                    - If the user asks for songs based on vocal range, such as high-pitched or low-pitched songs.
-                    - **Extract**: vocal range (high/low) (If not provided, return `None`).
-                    - **For example**:
-                        - "고음 자신 있는데, 고음 폭발하는 곡 추천해줘".
-                        - "남자 저음발라드 추천해줘".
-                        - "음역대가 낮은 남자 노래 추천해줘".
-                    - Output query type as 'vocal_range'.
-
-                6. **Situation-Based Query (Breakup, Christmas, Ssum):**
-                    - If the user is asking for songs based on specific situations or occasions.
-                    - **Extract**: situation context (e.g., breakup, Christmas, ssum, etc.), gender if applicable (If not provided, return `None`).
-                    - **For example**:
-                        - "감성적인 이별 노래 추천해줘".
-                        - "여자친구 앞에서 부를만한 노래".
-                        - "오늘 헤어졌는데 부를만한 노래 추천좀..".
-                        - "썸탈때 부를만한 남자노래 추천해줘".
-                    - **Situation Keywords**: 반드시 다음 목록의 상황 키워드로 반환되어야 합니다:
-                        - 그시절 띵곡 -> classics
-                        - 썸 -> ssum
-                        - 이별/헤어졌을때 -> breakup
-                        - 크리스마스/캐롤/눈 -> carol
-                        - 마지막곡 -> finale
-                        - 신나는/춤/흥 -> dance
-                        - 듀엣 -> duet
-                        - 비/꿀꿀할때 -> rainy
-                        - 회사생활 -> office
-                        - 축하 -> wedding
-                        - 군대/입대 -> military
-                    - Output query type as 'situation'.
-
-                7. **Year/Gender/Genre-based/Solo-Group Based Query:**
-                    - If the user asks for songs based on a specific year, gender, genre, or whether it's suitable for solo or group singing.
-                    - If gender exists in the query You have to decide which gender that the user wants to get recommendations for.
-                    - **Extract**: year, genre, gender (female/male/mixed), performance type (solo/group) (If not provided, return `None` or an empty list).
-                    - When extracting **genre**, return the most appropriate match from the following list of genres from the database:
-                        - 국악
-                        - 발라드
-                        - 록/메탈
-                        - 댄스
-                        - 성인가요/트로트
-                        - 포크/블루스
-                        - 키즈
-                        - 창작동요
-                        - 국내영화
-                        - 국내드라마
-                        - 랩/힙합
-                        - R&B/Soul
-                        - 인디음악
-                        - 애니메이션/웹툰
-                        - 만화
-                        - 교과서동요
-                        - 국외영화
-                        - POP
-                        - 클래식
-                        - 크로스오버
-                        - J-POP
-                        - CCM
-                        - 게임
-                        - 컨트리
-                        - 재즈
-                        - 보컬재즈
-                        - 포크
-                        - 블루스
-                        - 일렉트로니카
-                        - 월드뮤직
-                        - 애시드/퓨전/팝
-                        - 국내뮤지컬
-                    - **For example**:
-                        - "2010년도 쯤에 신나는 노래 추천해줘".
-                        - "발라드 2024".
-                        - "혼자 노래방 갈 때 부르기 좋은 노래 있을까?".
-                        - "여자 가수들의 힙합곡 추천".
-                    - Output query type as 'year_gender_genre'.
-
-                It's important to ensure that the query fits into only one of these nine categories. If the user input is unclear, make your best effort to infer the most likely category.
-                Always extract all the relevant fields, even if the information is missing, by returning `None` or an empty list where applicable.
-
-                Format:
-                - Query Type: <single_song_artist/multiple_song_artist/octave_key/song_artist_octave/hit_songs/vocal_range/situation/year_gender_genre>
-                - Song Name: [<song_name1>, <song_name2>, ...] (If applicable, otherwise `[]`)
-                - Artist Name: [<artist_name1>, <artist_name2>, ...] (If applicable, otherwise `[]`)
-                - Octave: [<octave_info>] (If applicable, otherwise `None`)
-                - Vocal Range: [<vocal_range>] (high, low, or `None`)
-                - Gender: [<gender_info>] (female, male, mixed, or `None`)
-                - Year: [<year_info>] (If year range, return `year >= start && year <= end`, otherwise `None`)
-                - Genre: [<genre_info>] (If applicable, otherwise `None`)
-                - Situation: [<situation_info>] (If applicable, otherwise `None`)
-                """},
-                {"role": "user", "content": query}
-            ]
+            messages = PromptsForFunctionCalling(query=query).prompt_for_decision
 
             response = await self.asyncOpenai.beta.chat.completions.parse(
                 model="gpt-4o-mini",
@@ -351,8 +254,8 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 with_feature_info = await self.vectorstore.asimilarity_search_with_score(content, k=10)
 
                 #Combine the results from both searches
-                song_info_ids_artist_info = [(artist_info[0].metadata.get('song_info_id'), artist_info[1]*10) for artist_info in with_artist_info]
-                song_info_ids_feature_info = [(feature_info[0].metadata.get('song_info_id'), feature_info[1]*10) for feature_info in with_feature_info]
+                song_info_ids_artist_info = [(artist_info[0].metadata.get('song_info_id'), artist_info[1]*100) for artist_info in with_artist_info]
+                song_info_ids_feature_info = [(feature_info[0].metadata.get('song_info_id'), feature_info[1]*100) for feature_info in with_feature_info]
 
                 # Combine the results from both searches
                 song_info_ids = song_info_ids_artist_info + song_info_ids_feature_info
@@ -363,110 +266,514 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             logger.error(f"Error handling single song-artist query: {e}")
             return None
 
-    async def handle_multiple_song_artist(self, songs: list):
+    async def handle_multiple_song_artist(self, input_song_name: list[str], input_artist_name: list[str]):
         """
         Handles queries with multiple song-artist pairs, finds common features and retrieves songs based on those.
         """
         try:
-            # Step 1: Build the combined query for all the song-artist pairs
-            query_for_langchain = "Find songs similar to the following songs:"
-            for song in songs:
-                query_for_langchain += f"Title: {song['song_name']} \n Aritst: {song['artist_name']}."
+            totalSize = 20
+            lengthOfSong = len(input_song_name)
+            lengthOfArtist = len(input_artist_name)
+            final_results = []
 
-            # Step 2: Retrieve relevant documents for each song
-            documents = []
-            for song in songs:
-                query = f"Title: {song['song_name']} \n Aritst: {song['artist_name']}"
-                results = await self.vectorstore.asimilarity_search(query, 1)
-                # Combine the descriptions from each result
-                retrieved_data = "\n".join([doc.metadata.get("description") for doc in results])
-                documents.append(retrieved_data)
-
-            # Step 3: Combine the retrieved data into a single string
-            combined_retrieved_data = "\n".join(documents)
-
-            # Step 4: Create the detailed prompt for multiple song-artist pairs
-            prompt_template = PromptTemplate.from_template(
-            """
-            You are a music recommendation assistant. The user is asking for songs similar to the following song-artist pairs:
-
-            {query_for_langchain}
+            # Step 1: 사용자가 노래 제목만 입력했는지 확인, 노래 제목만 입력한 경우 노래 제목과 관련된 노래를 찾는다.
+            if lengthOfSong >= 2 and lengthOfArtist < lengthOfSong:
+                lengthOfInput = lengthOfSong
+                for song in input_song_name:
+                    query = f"Title : {song} "
+                    response = self.vectorstore.asimilarity_search(query, totalSize//lengthOfInput)
+                    if len(response) > 0:
+                        final_results.extend([doc.metadata.get("song_info_id") for doc in response])
+                
+                return final_results, "오로지 노래 제목만 입력하셨습니다. 노래 제목과 가수 이름을 함께 입력해주세요. 노래 제목과 가수 이름을 함께 입력하면 더 정확한 결과를 제공할 수 있습니다."
             
-            Below are descriptions of songs that were retrieved from a song database based on these song-artist pairs:
-            
-            {combined_retrieved_data}
-            
-            Your task is to refine the query by focusing on the **common characteristics** shared between these songs. Analyze and describe the following aspects:
+            # Step 2: 사용자가 가수 이름만 입력했는지 확인, 가수 이름만 입력한 경우 가수 이름과 관련된 노래를 찾는다.
+            elif lengthOfSong < lengthOfArtist and lengthOfArtist >= 2:
+                lengthOfInput = len(input_artist_name)
+                for artist in input_artist_name:
+                    query = f"Artist : {artist} "
+                    response = self.vectorstore.asimilarity_search(query, totalSize//lengthOfInput)
+                    if len(response) > 0:
+                        final_results.extend([doc.metadata.get("song_info_id") for doc in response])
+                
+                return final_results, "오로지 가수 이름만 입력하셨습니다. 노래 제목과 가수 이름을 함께 입력해주세요. 노래 제목과 가수 이름을 함께 입력하면 더 정확한 결과를 제공할 수 있습니다."
 
-            - Genre
-            - Tempo
-            - Mood
-            - Vocal style
-            - Instrumentation
-            - Era
-            
-            **Make sure that all recommended songs are from the 2000s, 2010s or later.** The recommendations should explore and include similar characteristics across different artists and genres, and avoid focusing too much on a single song or artist.
+            # Step 3: 사용자가 노래 제목과 가수를 모두 입력했는지 확인하고 노래 제목과 가수 이름을 함께 입력한 경우 노래 제목과 가수 이름을 함께 검색한다.
+            if lengthOfSong >= 2 and lengthOfArtist >= 2 and lengthOfSong == lengthOfArtist:
+                for i in range(lengthOfSong):            
+                    query = f"Title: {input_song_name[i]} \n Aritst: {input_artist_name[i]}"
+                    results = await self.vectorstore.asimilarity_search(query, 1)
+                    # Combine the descriptions from each result
+                    description, artist_name = results[0].metadata.get("description"), results[0].metadata.get("aritst_name")
+                    final_results.append((description, artist_name))
+                
+                # Step 3: Combine the retrieved data into a single string
+                combined_retrieved_data = "\n".join([description for description, _ in final_results])
+                extractService = ExtractCommonTraitService(asyncOpenai=self.asyncOpenai)
+                messages = await extractService.ExtractCommonTraitService(combined_retrieved_data)
 
-            Specifically, identify **common traits** such as energy level (high-energy or calm), instruments used (e.g., guitar, synthesizer, piano), vocal type (e.g., male or female vocals, solo or group), production style (e.g., acoustic, electronic), and mood (e.g., upbeat, melancholic, nostalgic).
+                totalResult = []
+                # 숫자 카운트를 위한 변수 추가
+                artistResultNumber = totalSize//(lengthOfArtist*2)
+                # Get Recommendation with Same Artist, and Features
+                for _, artist in final_results:
+                    response = await self.vectorstore.asimilarity_search(f"Artist : {artist}", artistResultNumber)
+                    if len(response) > 0:
+                        totalResult.extend([doc.metadata.get("song_info_id") for doc in response])
 
-            Then, refine the query to suggest songs with similar **overall characteristics**, even if they are from different artists or slightly different genres. Ensure that your refined query combines the most important attributes from each song in a balanced manner, without focusing exclusively on one artist or song. 
+                # Extract and return query type
+                feature_message = ""
 
-            **Important**: The refined query should list out the combined traits of the songs and provide a diverse set of recommendations. Output the final refined query in **one well-structured sentence**.
+                if messages.genre:
+                    feature_message += "Genre: " + messages.genre + " "
+                if messages.year:
+                    feature_message += "Year: " + str(messages.year) + " "
+                if messages.country:
+                    feature_message += "Country: " + messages.country + " "
+                if messages.artist_type:
+                    feature_message += "Artist Type: " + messages.artist_type + " "
+                if messages.artist_gender:
+                    feature_message += "Artist Gender: " + messages.artist_gender + " "
+                if messages.octave:
+                    feature_message += "Octave: " + messages.octave + " "
+                if messages.vocal_range:
+                    feature_message += "Vocal Range: " + messages.vocal_range + " "
+                if len(messages.situation) > 0:
+                    feature_message += "Situation: " + " ".join(messages.situation) + " "
+                if messages.lyrics:
+                    feature_message += "Lyrics: " + messages.lyrics
 
-            FORMAT:
-            - **Refined Query**: Find songs from the 2010s or later that are <refined characteristics>, featuring <key shared features>, and explore <themes/moods>.
-            """
-        )
-
-            # Step 5: Format the prompt with the combined query and retrieved data
-            prompt = prompt_template.format(query_for_langchain=query_for_langchain, combined_retrieved_data=combined_retrieved_data)
-
-            logging.info(f"Prompt template: {prompt}")
-            
-            # Step 6: Use the LLM to refine the query
-            response = await self.asyncOpenai.beta.chat.completions.parse(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": prompt}],
-                response_format=RefineQuery,
-            )
-
-            parsed_result = response.choices[0].message.parsed
-
-            # Step 7: Return the refined query
-            return parsed_result.refined_query
+                # 결과 출력
+                print(feature_message.strip())  # 마지막에 불필요한 공백을 제거
+                
+                response_for_features = await self.vectorstore.asimilarity_search(feature_message, totalSize - artistResultNumber*lengthOfArtist)
+                if len(response_for_features) > 0:
+                    totalResult.extend([doc.metadata.get("song_info_id") for doc in response_for_features])
+                
+                return totalResult, "두 노래에 대해서 유사한 노래를 찾았습니다."
         except Exception as e:
             logger.error(f"Error handling multiple song-artist query: {e}")
             return None
 
-    async def get_relevant_documents(self, query: str, k: int = 10):
+    async def handle_octave_key(self, octave: str, gender: str):
+        """
+        Octave의 정보는 <MAX 3옥타브 레 or EQUAL 2옥타브 시 or MIN 1옥타브 레> 형식으로 입력됨
+        """
+        
         try:
-            return await self.vectorstore.as_retriever().aget_relevant_documents(query, k=k)
+            # 동적 필터링을 위한 기본 조건
+            filters = ["octave IS NOT NULL"]
+            params = []
+            octave = octave.strip()
+
+            # 성별 필터 추가
+            if gender and gender in ["남성", "여성", "혼성"]:
+                filters.append("gender = %s")
+                params.append(gender)
+
+            # 데이터베이스 연결 및 쿼리 실행
+            pool = await self.setup_db_config()
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    query = f"""
+                        SELECT
+                            octave,
+                            count(*) as count
+                        FROM song_info
+                        WHERE octave IS NOT NULL
+                        GROUP BY octave
+                        ORDER BY FIELD(
+                            REPLACE(octave, ' ', ''),
+                            '1옥타브도', '1옥타브도#', '1옥타브레', '1옥타브레#', '1옥타브미', '1옥타브파', '1옥타브파#', '1옥타브솔', '1옥타브솔#', '1옥타브라', '1옥타브라#', '1옥타브시',
+                            '2옥타브도', '2옥타브도#', '2옥타브레', '2옥타브레#', '2옥타브미', '2옥타브파', '2옥타브파#', '2옥타브솔', '2옥타브솔#', '2옥타브라', '2옥타브라#', '2옥타브시',
+                            '3옥타브도', '3옥타브도#', '3옥타브레', '3옥타브레#', '3옥타브미', '3옥타브파', '3옥타브파#', '3옥타브솔', '3옥타브솔#', '3옥타브라', '3옥타브라#', '3옥타브시',
+                            '4옥타브도', '4옥타브도#', '4옥타브레', '4옥타브레#', '4옥타브미', '4옥타브파', '4옥타브파#', '4옥타브솔', '4옥타브솔#', '4옥타브라', '4옥타브라#', '4옥타브시',
+                            '5옥타브도', '5옥타브도#', '5옥타브레'
+                        );
+                    """
+                    await cursor.execute(query)
+                    octave_data = await cursor.fetchall()
+
+            # 옥타브별 노래 개수 카운트 및 결과 저장
+            total_count = 0
+            selected_octaves = []
+
+            # MAX, MIN, EQUAL 처리 (기존 로직 그대로 유지)
+            if "MAX" in octave:
+                target_octave = octave.replace("MAX ", "").strip().replace(" ", "")
+                if target_octave in octave_info_list:
+                    # Reverse the octave_info_list to start from the highest octave
+                    reversed_octave_info_list = octave_info_list[::-1]
+                    index = reversed_octave_info_list.index(target_octave)
+                    reverse_octave_data = octave_data[::-1]
+                    # Start from the target octave and go downward
+                    for data in reverse_octave_data:
+                        octave_value = data['octave']
+                        count = data['count']
+                        if octave_value in reversed_octave_info_list[index:]:
+                            selected_octaves.append(octave_value)
+                            total_count += count
+                        if total_count >= 20:
+                            break
+            elif "MIN" in octave:
+                target_octave = octave.replace("MIN ", "").strip()
+                if target_octave in octave_info_list:
+                    index = octave_info_list.index(target_octave)
+                    for data in octave_data:
+                        octave_value = data['octave']
+                        count = data['count']
+                        if octave_value in octave_info_list[index:]:
+                            selected_octaves.append(octave_value)
+                            total_count += count
+                        if total_count >= 20:
+                            break
+            else:
+                logging.info("NONE OF MAX, MIN returning nothing")
+
+            # 옥타브별 비중 설정 (가까운 옥타브일수록 더 많이 선택)
+            total_selected_octaves = len(selected_octaves)
+            remaining_needed = 20
+            results = []
+            logging.info(f"Total selected octaves: {selected_octaves}")
+
+            # 가중치 설정: 가까운 옥타브에 높은 가중치 (반비례 가중치 방식)
+            weights = [(1 / (i + 1)) for i in range(total_selected_octaves)]
+            total_weight = sum(weights)
+            weights = [w / total_weight for w in weights]  # 가중치 합을 1로 맞춤
+            logging.info(f"Selected octaves: {selected_octaves}, Weights: {weights}")
+
+            for i, octave in enumerate(selected_octaves):
+                async with pool.acquire() as conn:
+                    async with conn.cursor() as cursor:
+                        # 각 옥타브에서 가중치에 따라 곡 수를 결정 (최소 1곡은 보장)
+                        proportion_count = int(weights[i] * remaining_needed)
+                        if proportion_count == 0:
+                            proportion_count = 1
+                        
+                        # 해당 옥타브에서 노래를 melon_likes 기준으로 가져옴
+                        await cursor.execute(f"""
+                            SELECT song_info_id
+                            FROM song_info
+                            WHERE octave = %s
+                            ORDER BY melon_likes DESC
+                            LIMIT {proportion_count * 2} -- 랜덤성을 위해 2배수로 가져옴
+                        """, (octave,))
+                        songs = await cursor.fetchall()
+
+                        # melon_likes에서 일부는 랜덤으로 선택
+                        random.shuffle(songs)
+                        selected_songs = songs[:proportion_count]
+                        results.extend([song['song_info_id'] for song in selected_songs])
+
+                        remaining_needed -= len(selected_songs)
+                        if remaining_needed <= 0:
+                            break
+
+            # 결과 반환 (선택된 song_info_id 리스트)
+            return results
+
         except Exception as e:
-            logger.error(f"Error fetching relevant documents: {e}")
+            logger.error(f"Failed to handle octave key: {e}")
+            return None
+
+    async def handle_octave_song_artist_key(self, song_name: List[str], artist_name: List[str], octave: str):
+        if(len(song_name) == 0 or len(artist_name) == 0 or octave == None):
+            return None
+        try:
+            # Create the query
+            query = ""
+
+            try:
+                if len(song_name) >= 1:
+                    query += f"Title : {song_name[0]} "
+                if len(artist_name) >= 1:
+                    query += f"Artist : {artist_name[0]} "
+                print("query: " + query)
+            except Exception as e:
+                logger.error(f"Failed to create query: {e}")
+                return None
+            
+            try:
+                # 노래 제목과 가수에 알맞는 노래 정보를 찾기 위해 Milvus DB에서 검색
+                results = await self.vectorstore.as_retriever(search_kwargs=dict(k=1)).ainvoke(query)  # Example retriever setup
+                # Print search results
+                if not results:
+                    print("No results found.")
+                    return None
+            except Exception as e:
+                logger.error(f"Failed to retrieve documents: {e}")
+                return None
+            
+            ## 만약 노래 제목과 가수 이름을 입력하였을 때 결과가 존재하는 경우
+            if results and len(results) > 0:
+                # Combine the retrieved document descriptions into one text block
+                tags = []
+
+                ## 옥타브 정보들을 가져온다
+                octave = results[0].metadata.get("octave")
+                print(f"Octave: {octave}")
+
+                ## 옥타브 정보가 존재하는 경우
+                if octave:
+                    # 옥타브 정보를 통해 노래 추천
+                    song_info_ids = await self.handle_octave_key("MAX " + octave.strip().replace(" ", ""), None)
+                    return song_info_ids
+                
+        except Exception as e:
+            logger.error(f"Error handling single song-artist query: {e}")
+            return None
+        
+    async def handle_hit_songs(self):
+        try:
+            # 데이터베이스 연결 및 쿼리 실행
+            pool = await self.setup_db_config()
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # melon_likes 기준으로 상위 200곡을 가져옴
+                    await cursor.execute("""
+                        SELECT song_info_id
+                        FROM (
+                            SELECT song_info_id
+                            FROM song_info
+                            ORDER BY melon_likes DESC
+                            LIMIT 1500
+                        ) AS top_songs
+                        ORDER BY RAND()
+                        LIMIT 20;
+                    """)
+                    songs = await cursor.fetchall()
+            
+            # 결과 반환 (랜덤으로 20곡 선택)
+            song_info_ids = [song['song_info_id'] for song in songs]
+            return song_info_ids
+
+        except Exception as e:
+            print(f"Error: {e}")
             return []
 
+    async def handle_vocal_range(self, vocal_range, gender):
+        """
+        Handles vocal range queries (high or low) with an optional gender filter (남성, 여성, 혼성).
+        """
+        if vocal_range is None:
+            return None
+
+        try:
+            db = await self.setup_db_config()
+            async with db.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    
+                    # Prepare the gender filter if gender is provided and valid
+                    gender_filter = ""
+                    if gender is not None:
+                        gender = gender.strip()  # Strip any extra spaces
+                        if gender in ["남성", "여성", "혼성"]:
+                            gender_filter = f" AND artist_gender = '{gender}'"
+
+                    # Handle high vocal range
+                    if vocal_range == "high":
+                        await cursor.execute(f"""
+                            SELECT song_info_id
+                            FROM (
+                                SELECT song_info_id
+                                FROM song_info
+                                WHERE high = 1 {gender_filter}  -- Add gender filter dynamically
+                                ORDER BY melon_likes DESC
+                                LIMIT 500
+                            ) AS top_songs
+                            ORDER BY RAND()
+                            LIMIT 20;
+                        """)
+                    
+                    # Handle low vocal range
+                    elif vocal_range == "low":
+                        await cursor.execute(f"""
+                            SELECT song_info_id
+                            FROM (
+                                SELECT song_info_id
+                                FROM song_info
+                                WHERE low = 1 {gender_filter}  -- Add gender filter dynamically
+                                ORDER BY melon_likes DESC
+                                LIMIT 500
+                            ) AS top_songs
+                            ORDER BY RAND()
+                            LIMIT 20;
+                        """)
+
+                    songs = await cursor.fetchall()
+            return [song['song_info_id'] for song in songs]
+        
+        except Exception as e:
+            logger.error(f"Failed to handle vocal range: {e}")
+            return None
+
+    async def handle_situation(self, situation: List[str]):
+        """
+        Handles situation-based queries. Filters the situation list to match valid situations,
+        and queries the database for each valid situation with a dynamic LIMIT based on the number of situations.
+        The last situation will get the remaining songs to make up a total of 20.
+        """
+        if len(situation) == 0:
+            return None
+
+        try:
+            return_situation_list = []
+            # 유효한 situation들만 필터링
+            valid_situations = [s.lower().strip() for s in situation if s.lower().strip() in situation_list]
+
+            if len(valid_situations) == 0:
+                return None  # 유효한 상황이 없으면 None 반환
+
+            # 각 상황에 대해 가져올 노래 수 계산 (20개를 상황의 개수로 나누어 제한)
+            limit_per_situation = 20 // len(valid_situations)
+            remaining_songs = 20  # 남은 노래 수 초기화
+
+            # 데이터베이스 연결
+            db = await self.setup_db_config()
+
+            # 각 유효한 상황에 대해 노래를 검색
+            async with db.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    for i, s in enumerate(valid_situations):
+                        if i == len(valid_situations) - 1:
+                            # 마지막 상황에서는 남은 노래 수만큼 LIMIT 설정
+                            limit = remaining_songs
+                        else:
+                            limit = limit_per_situation
+                            remaining_songs -= limit_per_situation  # 남은 노래 수 차감
+
+                        await cursor.execute(f"""
+                            SELECT song_info_id
+                            FROM (
+                                SELECT song_info_id
+                                FROM song_info
+                                WHERE {s} = 1  -- 상황에 해당하는 노래만 선택
+                                ORDER BY melon_likes DESC
+                                LIMIT 500
+                            ) AS top_songs
+                            ORDER BY RAND()
+                            LIMIT {limit};
+                        """)
+                        songs = await cursor.fetchall()
+
+                        # 결과를 합산하여 리스트에 추가
+                        return_situation_list.extend([song['song_info_id'] for song in songs])
+
+            # 모든 상황에 대해 검색한 노래 ID 리스트 반환
+            return return_situation_list
+
+        except Exception as e:
+            logger.error(f"Failed to handle situation: {e}")
+            return None
+
+    async def handle_year_gender_genre(self, year: str, gender: str, genre: str):
+        """
+        Handles year, gender, and genre-based queries.
+        If a year range or specific year is provided, it retrieves songs from that period.
+        It retrieves the top 500 songs based on melon_likes, and then selects 20 songs randomly.
+        """
+        if year is None and gender is None and genre is None:
+            return None
+
+        try:
+            db = await self.setup_db_config()
+
+            # 기본 SQL 쿼리 시작 부분
+            base_query = """
+                SELECT song_info_id
+                FROM (
+                    SELECT song_info_id
+                    FROM song_info
+                    WHERE 1=1
+            """
+
+            # SQL 조건을 저장할 리스트
+            conditions = []
+
+            # 연도 처리
+            if year:
+                if "&&" in year:
+                    # 연도 범위 처리 (예: "2010 && 2019")
+                    start_year, end_year = year.split("&&")
+                    conditions.append(f"year >= {start_year.strip()} AND year <= {end_year.strip()}")
+                else:
+                    # 특정 연도 처리 (예: "2013")
+                    conditions.append(f"year = {year.strip()}")
+
+            # 성별 처리
+            if gender and gender.lower() in ["남성", "여성", "혼성"]:
+                conditions.append(f"artist_gender = '{gender.strip()}'")
+
+            # 장르 처리
+            if genre and genre in genre_list:
+                conditions.append(f"genre = '{genre.strip()}'")
+
+            # 조건들을 AND로 연결
+            query = base_query + " AND " + " AND ".join(conditions) if conditions else base_query
+
+            # 서브쿼리로 상위 500곡을 가져온 후 무작위로 20곡 선택
+            query += """
+                    ORDER BY melon_likes DESC
+                    LIMIT 500
+                ) AS top_songs
+                ORDER BY RAND()
+                LIMIT 20;
+            """
+
+            async with db.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # SQL 쿼리 실행
+                    await cursor.execute(query)
+                    songs = await cursor.fetchall()
+
+            # 결과 반환
+            return [song['song_info_id'] for song in songs]
+
+        except Exception as e:
+            logger.error(f"Failed to handle year, gender, or genre: {e}")
+            return None
+    
     async def run(self, query: str):
         """
         Main method to handle various types of user inputs and return recommendations.
         """
         try:
+            song_info_ids = []
             try:
                 logging.info(f"Received query: {query}")
                 query_type, Results = await self.determine_query_type(query)
                 logging.info(f"Results: {Results}")
                 if query_type == "single_song_artist":
                     song_info_ids, message = await self.handle_single_song_artist(Results.song_name, Results.artist_name)
+                    logging.info(f"song_info_ids from single query: {song_info_ids}")
                 elif query_type == "multiple_song_artist":
-                    refined_query = await self.handle_multiple_song_artist(Results)
+                    result_song_ids = await self.handle_multiple_song_artist(Results.song_name, Results.artist_name)
+                    logging.info(f"result_song_ids from multi query: {result_song_ids}")
+                elif query_type == "octave_key":
+                    song_info_ids = await self.handle_octave_key(Results.octave, Results.gender)
+                    logging.info(f"song_info_ids from octave_key query: {song_info_ids}")
+                elif query_type == "song_artist_octave":
+                    song_info_ids = await self.handle_octave_song_artist_key(Results.song_name, Results.artist_name, Results.octave)
+                    logging.info(f"song_info_ids from song_artist_octave query: {song_info_ids}")
+                elif query_type == "hit_songs":
+                    song_info_ids = await self.handle_hit_songs()
+                    logging.info(f"song_info_ids from hit_songs query: {song_info_ids}")
+                elif query_type == "vocal_range":
+                    song_info_ids = await self.handle_vocal_range(Results.vocal_range, Results.gender)
+                    logging.info(f"song_info_ids from vocal_range query: {song_info_ids}")
+                elif query_type == "situation":
+                    song_info_ids = await self.handle_situation(Results.situation)
+                    logging.info(f"song_info_ids from situation query: {song_info_ids}")
+                elif query_type == "year_gender_genre":
+                    song_info_ids = await self.handle_year_gender_genre(Results.year, Results.gender, Results.genre)
+                    logging.info(f"song_info_ids from year gender genre query: {song_info_ids}")
+                else:
+                    logging.info("No valid query type found")
+                    
             except Exception as e:
                 logger.error(f"Failed to determine query type: {e}")
                 return FunctionCallingWithTypesResponse(songInfoId=[])
 
-            # logging.info(f"Refined query: {results}")
-            # answers = await self.vectorstore.asimilarity_search(results, k=10, expr="MR == False")
-            song_info_ids = []
-            # for answer in answers:
-            #     song_info_ids.append(int(answer.metadata['song_info_id']))
             return {
                 "song_info_ids": song_info_ids,
             }

@@ -16,7 +16,7 @@ def run():
         # LangchainRequest 생성
         request = LangchainAgentRequest(
             memberId=8,  # 예시로 memberId 8을 사용
-            command="빅뱅 노래 추천해줘"  # 서버에 전달할 명령
+            command="빅뱅 추천해줘"  # 서버에 전달할 명령
         )
 
         # 서버에 요청을 보내고 응답 받기
