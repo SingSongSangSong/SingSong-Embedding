@@ -66,7 +66,7 @@ class PromptsForFunctionCalling:
 
                 5. **Vocal Range (High/Low) Query:**
                     - If the user asks for songs based on vocal range, such as high-pitched or low-pitched songs or difficulty related to singing (e.g., easy or hard songs).
-                    - **Extract**: vocal range (high/low) (If not provided, return `None`).
+                    - **Extract**: vocal range (high/low) (If not provided, return `None`). If user mention easy it means low and hard means high.
                     - **For example**:
                         - "고음 자신 있는데, 고음 폭발하는 곡 추천해줘".
                         - "남자 저음발라드 추천해줘".
@@ -99,6 +99,10 @@ class PromptsForFunctionCalling:
                     - If the user asks for songs based on a specific year, gender, genre, or whether it's suitable for solo or group singing.
                     - If gender exists in the query You have to decide which gender that the user wants to get recommendations for.
                     - **Extract**: year, genre, gender (female/male/mixed), performance type (solo/group) (If not provided, return `None` or an empty list).
+                    - When extracting **year** think about the following:
+                        - if the user asks for a specific year, return the songs from that year. (e.g., "2020년도 노래 추천해줘" then return `year == 2020`)
+                        - if the user asks for a range of years, return the songs from that range. (e.g., "2010년도 쯤에 신나는 노래 추천해줘" then return `year >= 2010 && year <= 2019`)
+                        - If the user asks about their birth year, such as "2009년생" or "10년생", return songs that were popular starting from when the user was around 10 years old up to the most recent hits. (e.g., "2009년생인데 친구들이 잘 알만한 랩 알려줘" then return `year >= 2019 && year <= 2024`)
                     - When extracting **genre**, return the most appropriate match from the following list of genres from the database:
                         - 국악
                         - 발라드
@@ -148,7 +152,7 @@ class PromptsForFunctionCalling:
                 - Artist Name: [<artist_name1>, <artist_name2>, ...] (If applicable, otherwise `[]`)
                 - Octave: <octave_info>(`MAX [pitch]`/`EQUAL [pitch]`/`MIN [pitch]`) (If applicable, otherwise `None`)
                 - Vocal Range: <vocal_range> (high, low, or `None`)
-                - Gender: <gender_info> (female, male, mixed, or `None`)
+                - Gender: <gender_info> (male, female, mixed or `None`)
                 - Year: <year_info> (If year range, return `year >= start && year <= end`, If specific year, return `year == input_year` otherwise `None`)
                 - Genre: <genre_info> (If applicable, otherwise `None`)
                 - Situation: [<situation_info>] (classics, ssum, breakup, carol, finale, dance, duet, rainy, office, wedding, military) (If applicable, otherwise `None`)
