@@ -45,15 +45,15 @@ class PromptsForFunctionCalling:
                     - Output query type as 'multiple_song_artist'.
 
                 3. **Octave/Key-based Query:**
-                    - If the user mentions specific octaves 
-                    - The query might involve asking for songs in a particular octave or maximum/minimum octave.
-                    - **Extract**: octave information(as MAX 3옥타브레 or EQUAL 2옥타브시 or MIN 1옥타브레), genre (If not provided, return `None`), gender (If not provided, return `None`), year (If not provided, return `None`).
-                    - **Octave Information**: Octave information should be extracted in the following format:
-                        - MAX [pitch]: The song should have a maximum pitch of [pitch].
-                        - MIN [pitch]: The song should have a minimum pitch of [pitch].
+                    - If the user mentions specific octaves and notes (e.g., 3옥타브라, 2옥타브도), the query should return songs that match the specified octave and note.
+                    - **Extract**: Octave information (e.g., MAX 3옥타브라 or MIN 1옥타브레), genre (if not provided, return `None`), gender (if not provided, return `None`), year (if not provided, return `None`).
+                    - **Octave Information**: Octave information must include both the octave and the note. Additionally, the query must indicate whether the song should have a maximum or minimum pitch. The format should be as follows:
+                        - **MAX [octave and note]**: The song should have a maximum pitch or equal to [octave and note] (e.g., MAX 3옥타브라). If the octave and note provided match exactly, it should be marked as **MAX**.
+                        - **MIN [octave and note]**: The song should have a minimum pitch of [octave and note] (e.g., MIN 1옥타브레).
                     - **For example**:
-                        - "최고음 2옥타브시 노래 추천해줘".
-                        - "남자 1옥타브로 노래 추천해줘".
+                        - "최고음 2옥타브시 노래 추천해줘" (the note "시" must be included, and since the query is about 최고음, it should be marked as **MAX**).
+                        - "남자 1옥타브레 노래 추천해줘" (the note "레" must be included, and since it specifies a minimum pitch, it should be marked as **MIN**).
+                    - The octave without both a note and either MAX or MIN is not valid. Always extract both octave and note and indicate whether it is MAX or MIN (e.g., **MAX 3옥타브라** or **MIN 1옥타브레**).
                     - Output query type as 'octave_key'.
 
                 4. **Octave with Song/Artist Query:**
@@ -77,10 +77,12 @@ class PromptsForFunctionCalling:
                     - If the user is asking for songs based on specific situations or occasions.
                     - **Extract**: situation context (e.g., breakup, carol, ssum, etc.), gender if applicable (If not provided, return `None`).
                     - **For example**:
-                        - "감성적인 이별 노래 추천해줘".
-                        - "여자친구 앞에서 부를만한 노래".
-                        - "오늘 헤어졌는데 부를만한 노래 추천좀..".
-                        - "썸탈때 부를만한 남자노래 추천해줘".
+                        - "감성적인 이별 노래 추천해줘". -> breakup
+                        - "여자친구/여친 앞에서 부를만한 노래". -> ssum, male (because the world "여자친구 앞에서" is mentioned it means the user is male)
+                        - "오늘 헤어졌는데 부를만한 노래 추천좀..". -> breakup
+                        - "썸탈때 부를만한 남자노래 추천해줘". -> ssum, male
+                        - "비가 오는 날 듣기 좋은 노래 추천해줘". -> rainy
+                        - "썸남/남친 앞에서 부를만한 노래 추천". -> ssum, female (because the world "썸남 앞에서" is mentioned it means the user is)
                     - **Situation Keywords**: 반드시 다음 목록의 상황 키워드로 반환되어야 합니다:
                         - 그시절 띵곡 -> classics
                         - 썸 -> ssum
@@ -150,7 +152,7 @@ class PromptsForFunctionCalling:
                 - Query Type: <single_song_artist/multiple_song_artist/octave_key/song_artist_octave/hit_songs/vocal_range/situation/year_gender_genre>
                 - Song Name: [<song_name1>, <song_name2>, ...] (If applicable, otherwise `[]`)
                 - Artist Name: [<artist_name1>, <artist_name2>, ...] (If applicable, otherwise `[]`)
-                - Octave: <octave_info>(`MAX [pitch]`/`EQUAL [pitch]`/`MIN [pitch]`) (If applicable, otherwise `None`)
+                - Octave: <octave_info>(`MAX [pitch]`/`MIN [pitch]`) (If applicable, otherwise `None`)
                 - Vocal Range: <vocal_range> (high, low, or `None`)
                 - Gender: <gender_info> (male, female, mixed or `None`)
                 - Year: <year_info> (If year range, return `year >= start && year <= end`, If specific year, return `year == input_year` otherwise `None`)
