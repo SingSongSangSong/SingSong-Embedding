@@ -97,10 +97,16 @@ class PromptsForFunctionCalling:
                         - 군대/입대 -> military
                     - Output query type as 'situation'.
 
-                7. **Year/Gender/Genre-based/Solo-Group Based Query:**
+                7. **Year/Gender/Genre-based/Solo-Group/Country Based Query:**
                     - If the user asks for songs based on a specific year, gender, genre, or whether it's suitable for solo or group singing.
-                    - If gender exists in the query You have to decide which gender that the user wants to get recommendations for.
-                    - **Extract**: year, genre, gender (female/male/mixed), performance type (solo/group) (If not provided, return `None` or an empty list).
+                    - If gender exists in the query, you must carefully determine whether the user is specifically requesting gender-based recommendations. 
+                        (If the gender is 'male', 'boy', or 'men', set it to 'male'. 
+                        If the gender is 'female', 'girl', or 'women', set it to 'female'. 
+                        If both 'male' and 'female' are explicitly mentioned in the query, set it to 'mixed'. 
+                        However, be cautious and only add gender information if it is explicitly and clearly requested by the user. 
+                        Avoid adding gender-related conditions unless the query explicitly contains gender-specific terms. If the query includes non-gender-related terms like nationalities (e.g., 'Korean', 'Japanese'), set the gender to `None`. 
+                        If gender does not matter or is not mentioned, set it to `None`.)
+                    - **Extract**: year, genre(as List), gender (female/male/mixed, if not provided return None), performance type (solo/group), country (If not provided, return `None` or an empty list).
                     - When extracting **year** think about the following:
                         - if the user asks for a specific year, return the songs from that year. (e.g., "2020년도 노래 추천해줘" then return `year == 2020`)
                         - if the user asks for a range of years, return the songs from that range. (e.g., "2010년도 쯤에 신나는 노래 추천해줘" then return `year >= 2010 && year <= 2019`)
@@ -138,6 +144,8 @@ class PromptsForFunctionCalling:
                         - 월드뮤직
                         - 애시드/퓨전/팝
                         - 국내뮤지컬
+                    - When extracting **country** return the most appropriate match from the following list of genres from the database:
+                        - "대한민국", "미국", "일본", "영국", "스웨덴", "캐나다", "아일랜드", "노르웨이", "독일", "덴마크", "콜롬비아", "브라질", "러시아", "바베이도스", "오스트레일리아", "프랑스", "쿠바", "스페인", "뉴질랜드", "자마이카", "말레이시아", "네덜란드", "푸에르토리코 연방", "나이지리아", "가나", "아르헨티나", "벨기에", "중국", "폴란드", "타이 왕국", "타이완"
                     - **For example**:
                         - "2010년도 쯤에 신나는 노래 추천해줘".
                         - "발라드 2024".
@@ -154,10 +162,14 @@ class PromptsForFunctionCalling:
                 - Artist Name: [<artist_name1>, <artist_name2>, ...] (If applicable, otherwise `[]`)
                 - Octave: <octave_info>(`MAX [pitch]`/`MIN [pitch]`) (If applicable, otherwise `None`)
                 - Vocal Range: <vocal_range> (high, low, or `None`)
-                - Gender: <gender_info> (male, female, mixed or `None`)
+                - Gender: <gender_info> (If the gender is 'male', 'boy', or 'men', set it to 'male'. 
+                            If the gender is 'female', 'girl', or 'women', set it to 'female'. 
+                            If both 'male' and 'female' are explicitly mentioned in the query, set it to 'mixed'. 
+                            If gender does not matter or is not mentioned, set it to `None`.)
                 - Year: <year_info> (If year range, return `year >= start && year <= end`, If specific year, return `year == input_year` otherwise `None`)
-                - Genre: <genre_info> (If applicable, otherwise `None`)
+                - Genre: [<genre_info>] (If applicable, otherwise `None`)
                 - Situation: [<situation_info>] (classics, ssum, breakup, carol, finale, dance, duet, rainy, office, wedding, military) (If applicable, otherwise `None`)
+                - Country: <country_info> (If applicable, otherwise `None`)
                 """},
                 {"role": "user", "content": query}
             ]
