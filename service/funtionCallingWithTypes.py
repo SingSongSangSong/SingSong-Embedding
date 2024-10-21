@@ -395,10 +395,15 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             params = []
             octave = octave.strip()
 
-            # 성별 필터 추가
-            if gender and gender in ["남성", "여성", "혼성"]:
-                filters.append("gender = %s")
-                params.append(gender)
+            # 성별 처리
+            gender_filter = ""
+            if gender and gender.lower().strip() in ["male", "female", "mixed"]:
+                if gender.lower().strip() == "male":
+                    gender_filter = f" AND artist_gender = '남성'"
+                elif gender.lower().strip() == "female":
+                    gender_filter = f" AND artist_gender = '여성'"
+                elif gender.lower().strip() == "mixed":
+                    gender_filter = f" AND artist_gender = '혼성'"
 
             # 데이터베이스 연결 및 쿼리 실행
             pool = await self.setup_db_config()
@@ -409,7 +414,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                             octave,
                             count(*) as count
                         FROM song_info
-                        WHERE octave IS NOT NULL
+                        WHERE octave IS NOT NULL {gender_filter}  -- 성별 필터가 있으면 추가
                         GROUP BY octave
                         ORDER BY FIELD(
                             REPLACE(octave, ' ', ''),
@@ -483,7 +488,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                         await cursor.execute(f"""
                             SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
                             FROM song_info
-                            WHERE octave = %s and is_mr = 0 and is_live = 0
+                            WHERE octave = %s and is_mr = 0 and is_live = 0 {gender_filter}
                             ORDER BY melon_likes DESC
                             LIMIT {proportion_count * 2} -- 랜덤성을 위해 2배수로 가져옴
                         """, (octave,))
