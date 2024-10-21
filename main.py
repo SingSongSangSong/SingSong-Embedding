@@ -4,15 +4,10 @@ import asyncio
 import signal
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 비동기 스케줄러
 from service.userProfileService import UserProfileService
-from service.milvusInsertService import MilvusInsertService
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
-from service.langchainServiceGrpc import LangChainServiceGrpc
-from service.asyncLangchainAgentWithTypes import LangChainServiceAgentGrpc
 from service.functionCallingServiceGrpc import FunctionCallingServiceGrpc
 from service.funtionCallingWithTypes import FunctionCallingWithTypesServiceGrpc
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
-from proto.langchainRecommend.langchainRecommend_pb2_grpc import add_LangchainRecommendServicer_to_server
-from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import add_LangchainAgentRecommendServicer_to_server
 from proto.functionCallingRecommend.functionCallingRecommend_pb2_grpc import add_functionCallingRecommendServicer_to_server
 from proto.functionCallingWithTypes.functionCallingWithTypes_pb2_grpc import add_FunctionCallingWithTypesRecommendServicer_to_server
 from service.hotTrendingService import HotTrendingService
@@ -49,9 +44,6 @@ async def serve_grpc():
 
     # 서비스 추가
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), grpc_server)
-    ## 사용하지 않는 서비스 주석 처리
-    # add_LangchainRecommendServicer_to_server(LangChainServiceGrpc(), grpc_server)
-    # add_LangchainAgentRecommendServicer_to_server(LangChainServiceAgentGrpc(), grpc_server)
     add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), grpc_server)
     add_FunctionCallingWithTypesRecommendServicer_to_server(FunctionCallingWithTypesServiceGrpc(), grpc_server)
 
