@@ -82,7 +82,7 @@ def register_signal_handlers(loop):
 async def main():
     global scheduler
 
-    tracer.configure(hostname='localhost', port=8126, https=False)
+    tracer.configure(port=8126, https=False)
 
     # HotTrendingService 및 크롤링 서비스 초기화
     await hot_trending_service.v2_init()
