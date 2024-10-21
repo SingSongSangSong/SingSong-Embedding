@@ -61,7 +61,7 @@ jobs:
           REDIS_HOST: ${{ secrets.REDIS_HOST }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LANGCHAIN_TRACING_V2: "true"
+          LANGCHAIN_TRACING_V2: "false"
           LANGCHAIN_ENDPOINT: "https://api.smith.langchain.com"
           LANGCHAIN_API_KEY: ${{ secrets.LANGCHAIN_API_KEY }}
           LANGCHAINPROJECT: "singsongsangsong"

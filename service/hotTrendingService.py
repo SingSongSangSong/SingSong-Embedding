@@ -49,7 +49,7 @@ class HotTrendingService:
         try:
             # 비동기 Redis 클라이언트 생성
             redis = await aioredis.from_url(
-                f"redis://{self.redis_host}:{self.redis_port}"
+                f"redis://{self.redis_host}:{self.redis_port}", password=os.getenv('REDIS_PASSWORD', None)
             )
             
             # Redis 연결 확인
