@@ -32,8 +32,9 @@ class QueryType(BaseModel):
     vocal_range: str
     gender : str
     year : str
-    genre : str
+    genre : List[str]
     situation : List[str]
+    country: str
 
 class RefineQuery(BaseModel):
     refined_query: str
@@ -47,6 +48,8 @@ octave_info_list = [
 ]
 situation_list = ['classics', 'ssum', 'breakup', 'carol', 'finale', 'dance', 'duet', 'rainy', 'office', 'wedding', 'military']
 genre_list = ["국악", "발라드", "록/메탈", "댄스", "성인가요/트로트", "포크/블루스", "키즈", "창작동요", "국내영화", "국내드라마", "랩/힙합", "R&B/Soul", "인디음악", "애니메이션/웹툰", "만화", "교과서동요", "국외영화", "POP", "클래식", "크로스오버", "J-POP", "CCM", "게임", "컨트리", "재즈", "보컬재즈", "포크", "블루스", "일렉트로니카", "월드뮤직", "애시드/퓨전/팝", "국내뮤지컬"]
+country_list = ["대한민국", "미국", "일본", "영국", "스웨덴", "캐나다", "아일랜드", "노르웨이", "독일", "덴마크", "콜롬비아", "브라질", "러시아", "바베이도스", "오스트레일리아", "프랑스", "쿠바", "스페인", "뉴질랜드", "자마이카", "말레이시아", "네덜란드", "푸에르토리코 연방", "나이지리아", "가나", "아르헨티나", "벨기에", "중국", "폴란드", "타이 왕국", "타이완"]
+
 
 class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServicer):
     def __init__(self):
@@ -551,29 +554,53 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             logger.error(f"Error handling single song-artist query: {e}")
             return None, "유사한 노래를 찾지 못했습니다."
         
-    async def handle_hit_songs(self):
+    async def handle_hit_songs(self, artist_name: List[str]):
         try:
+            # artist_name이 주어졌을 경우 처리
+            found_artist_name = None
+            if len(artist_name) != 0:
+                query = f"Artist : {artist_name[0]}"
+                response = await self.vectorstore.asimilarity_search(query, 1)
+                if len(response) > 0:
+                    found_artist_name = response[0].metadata.get("artist_name")
+            
             # 데이터베이스 연결 및 쿼리 실행
             pool = await self.setup_db_config()
             async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
-                    # melon_likes 기준으로 상위 200곡을 가져옴
-                    await cursor.execute("""
-                        SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
-                        FROM (
-                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
-                            FROM song_info
-                            WHERE is_mr = 0 AND is_live = 0
-                            ORDER BY melon_likes DESC
-                            LIMIT 1500
-                        ) AS top_songs
-                        ORDER BY RAND()
-                        LIMIT 20;
-                    """)
+                    # melon_likes 기준으로 상위 1500곡을 가져옴
+                    if found_artist_name:
+                        # artist_name이 존재하는 경우
+                        await cursor.execute("""
+                            SELECT song_info_id
+                            FROM (
+                                SELECT song_info_id
+                                FROM song_info
+                                WHERE artist_name = %s
+                                ORDER BY melon_likes DESC
+                                LIMIT 1500
+                            ) AS top_songs
+                            ORDER BY RAND()
+                            LIMIT 20;
+                        """, (found_artist_name,))
+                    else:
+                        # artist_name이 존재하지 않는 경우
+                        await cursor.execute("""
+                            SELECT song_info_id
+                            FROM (
+                                SELECT song_info_id
+                                FROM song_info
+                                ORDER BY melon_likes DESC
+                                LIMIT 1500
+                            ) AS top_songs
+                            ORDER BY RAND()
+                            LIMIT 20;
+                        """)
+                    
                     songs = await cursor.fetchall()
-            
+
             # 결과 반환 (랜덤으로 20곡 선택)
-            song_info_ids = [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id']) for song in songs]
+            song_info_ids = [song['song_info_id'] for song in songs]
             return song_info_ids, "인기 있는 노래를 추천합니다."
 
         except Exception as e:
@@ -710,7 +737,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             logger.error(f"Failed to handle situation: {e}")
             return None, "상황 정보를 처리하는 중 오류가 발생했습니다."
 
-    async def handle_year_gender_genre(self, year: str, gender: str, genre: str):
+    async def handle_year_gender_genre(self, year: str, gender: str, genre: List[str], country: str):
         """
         Handles year, gender, and genre-based queries.
         If a year range or specific year is provided, it retrieves songs from that period.
@@ -755,9 +782,18 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 elif gender.lower().strip() == "mixed":
                     conditions.append(f"artist_gender = '혼성'")        
 
+            # 유효한 장르만 필터링
+            valid_genres = [a_genre.strip() for a_genre in genre if a_genre.strip() and a_genre.strip() in genre_list]
+
             # 장르 처리
-            if genre.strip() and genre.strip() in genre_list:
-                conditions.append(f"genre = '{genre.strip()}'")
+            if valid_genres:
+                # 각각의 장르에 대해 'genre = 장르' 조건을 추가하고 AND로 묶음
+                genre_conditions = " AND ".join(f"genre = '{g}'" for g in valid_genres)
+                conditions.append(f"({genre_conditions})")
+
+            if country:
+                if country in country_list:
+                    conditions.append(f"country = '{country}'")
 
             # 조건들을 AND로 연결
             if conditions:
@@ -851,7 +887,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     songInfos, message = await self.handle_octave_song_artist_key(Results.song_name, Results.artist_name, Results.octave)
                     logging.info(f"song_info_ids from song_artist_octave query: {songInfos}")
                 elif query_type == "hit_songs":
-                    songInfos, message = await self.handle_hit_songs()
+                    songInfos, message = await self.handle_hit_songs(Results.artist_name)
                     logging.info(f"song_info_ids from hit_songs query: {songInfos}")
                 elif query_type == "vocal_range":
                     songInfos, message = await self.handle_vocal_range(Results.vocal_range, Results.gender)
@@ -860,7 +896,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     songInfos, message = await self.handle_situation(Results.situation, Results.gender)
                     logging.info(f"song_info_ids from situation query: {songInfos}")
                 elif query_type == "year_gender_genre":
-                    songInfos, message = await self.handle_year_gender_genre(Results.year, Results.gender, Results.genre)
+                    songInfos, message = await self.handle_year_gender_genre(Results.year, Results.gender, Results.genre, Results.country)
                     logging.info(f"song_info_ids from year gender genre query: {songInfos}")
                 else:
                     logging.info("No valid query type found")
