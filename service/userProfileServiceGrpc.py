@@ -4,7 +4,7 @@ import logging
 import numpy as np
 from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import UserProfileServicer
 from proto.userProfileRecommend.userProfileRecommend_pb2 import ProfileRequest, ProfileResponse, SimilarItem
-from pymilvus import Collection, connections
+from pymilvus import Collection, connections, utility
 import os
 
 logger = logging.getLogger(__name__)
@@ -13,7 +13,7 @@ class UserProfileServiceGrpc(UserProfileServicer):
     def __init__(self, user_profile_service):
         self.user_profile_service = user_profile_service
         # Milvus 연결
-        connections.connect(alias="default", host=os.getenv("MILVUS_HOST", "milvus-standalone"), port="19530")
+        connections.connect(alias="userProfileServiceGrpc", host=os.getenv("MILVUS_HOST", "milvus-standalone"), port="19530")
         self.song_collection = Collection("singsongsangsong_22286")
         self.profile_collection = Collection("user_profile")
 

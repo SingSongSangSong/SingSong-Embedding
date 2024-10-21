@@ -1,9 +1,8 @@
 import json
 import logging
 import os
-
-import pymysql
-import redis
+import aiomysql
+import aioredis
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo  # Python 3.9 이상
 from dotenv import load_dotenv
@@ -26,38 +25,41 @@ class HotTrendingService:
         self.redis_host = os.getenv('REDIS_HOST')
         self.redis_port = 6379
 
-    def setup_db_config(self):
+    async def setup_db_config(self):
         try:
-            db = pymysql.connect(
+            # 비동기 MySQL 연결 설정
+            pool = await aiomysql.create_pool(
                 host=self.db_host,
                 user=self.db_user,
                 password=self.db_password,
-                database=self.db_database,
+                db=self.db_database,
                 port=self.db_port,
                 charset='utf8mb4',
-                cursorclass=pymysql.cursors.DictCursor
+                cursorclass=aiomysql.DictCursor,
+                autocommit=True  # 자동 커밋 설정
             )
-        except pymysql.MySQLError as e:
+            logger.info("DB 연결 성공")
+            return pool
+
+        except aiomysql.MySQLError as e:
             logger.error(f"MySQL 연결 실패: {e}")
             raise
-
-        logger.info("db 연결 성공")
-        return db
     
-    def setup_redis_config(self):
+    async def setup_redis_config(self):
         try:
-            rdb = redis.Redis(
-                host=self.redis_host,
-                port=self.redis_port
+            # 비동기 Redis 클라이언트 생성
+            redis = await aioredis.from_url(
+                f"redis://{self.redis_host}:{self.redis_port}", password=os.getenv('REDIS_PASSWORD', None)
             )
-            rdb.ping()
+            
+            # Redis 연결 확인
+            await redis.ping()
             logger.info("Redis 연결 성공")
-        except redis.ConnectionError as e:
+            return redis
+
+        except (aioredis.ConnectionError, aioredis.RedisError) as e:
             logger.error(f"Redis 연결 실패: {e}")
             raise
-
-        logger.info("Redis 연결 성공")
-        return rdb
 
     # V1: 남성 전체, 여성 전체 - live 없음
     def v1_scheduler(self):
@@ -198,63 +200,65 @@ class HotTrendingService:
     # 성별미정 전체, 10대, 20대, 30대, 40대 이상
     # 남성 전체, 10대, 20대, 30대, 40대 이상
     # 여성 전체, 10대, 20대, 30대, 40대 이상
-    def v2_scheduler(self):
+    async def v2_scheduler(self):
         try: 
-            db = self.setup_db_config()
-            cursor = db.cursor()
-            cursor.execute("""     
-                WITH scored_songs AS (
-                    SELECT
-                        ma.song_info_id,
-                        SUM(ma.action_score) AS total_score,
-                        ma.gender,
-                        CASE
-                            WHEN ma.birthyear = 0 THEN 'ALL'
-                            WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
-                            WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
-                            WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
-                            WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
-                            ELSE 'ALL'
-                        END AS age_group
-                    FROM member_action as ma
-                    WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
-                    GROUP BY ma.song_info_id, ma.gender, age_group
-                )
-                SELECT
-                    ss.song_info_id,
-                    ss.total_score,
-                    s.song_name,
-                    s.artist_name,
-                    s.song_number,
-                    s.is_mr,
-                    s.album,
-                    ss.gender,
-                    ss.age_group,
-                    s.melon_song_id
-                FROM scored_songs ss
-                JOIN song_info s ON ss.song_info_id = s.song_info_id
-            """)
-            results = cursor.fetchall()
-            db.close()
+            pool = await self.setup_db_config()
+            async with pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("""     
+                        WITH scored_songs AS (
+                            SELECT
+                                ma.song_info_id,
+                                SUM(ma.action_score) AS total_score,
+                                ma.gender,
+                                CASE
+                                    WHEN ma.birthyear = 0 THEN 'ALL'
+                                    WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
+                                    WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
+                                    WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
+                                    WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
+                                    ELSE 'ALL'
+                                END AS age_group
+                            FROM member_action as ma
+                            WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
+                            GROUP BY ma.song_info_id, ma.gender, age_group
+                        )
+                        SELECT
+                            ss.song_info_id,
+                            ss.total_score,
+                            s.song_name,
+                            s.artist_name,
+                            s.song_number,
+                            s.is_mr,
+                            s.album,
+                            ss.gender,
+                            ss.age_group,
+                            s.melon_song_id
+                        FROM scored_songs ss
+                        JOIN song_info s ON ss.song_info_id = s.song_info_id
+                    """)
+                    results = await cursor.fetchall()
 
-            # is_live 추가 - 임시
-            for _, item in enumerate(results):
-                item["is_live"] = 0
-
-            rdb = self.setup_redis_config()
-
+            redis = await self.setup_redis_config()
             # Redis에서 이전 데이터 가져오기
             seoul_tz = ZoneInfo('Asia/Seoul')
             now = datetime.now(seoul_tz)
             formatted_string_for_current_time = now.strftime("%Y-%m-%d-%H-Hot_Trend")
 
+            for result in results:
+                result["is_live"] = 0  # 임시 처리
+
             previous_data = {"male": {}, "female": {}, "mixed": {}}
             for gender_key in ["MALE", "FEMALE", "MIXED"]:
                 for age_group in ["ALL", "10", "20", "30", "40+"]:
                     key = f"{formatted_string_for_current_time}_{gender_key}_{age_group}"
-                    if rdb.exists(key):
-                        current_data = rdb.get(key)
-                        previous_data[gender_key.lower()][age_group] = json.loads(current_data)
+                    data = await redis.get(key)
+                    if data:
+                        try:
+                            previous_data[gender_key.lower()][age_group] = json.loads(data)
+                        except json.JSONDecodeError:
+                            logger.warning(f"Invalid JSON for key: {key}. Setting as empty list.")
+                            previous_data[gender_key.lower()][age_group] = []
                     else:
                         previous_data[gender_key.lower()][age_group] = []
 
@@ -263,288 +267,237 @@ class HotTrendingService:
             female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
             mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
 
-            # 남자/여자 데이터를 성별 및 나이대에 맞게 분류
+            # 데이터 분류
             for row in results:
-                gender = row['gender']
-                age_group = row['age_group']
+                gender, age_group = row["gender"], row["age_group"]
 
                 # 전체 성별 - 전체 연령
-                existing_song = next((item for item in mixed_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
-                if existing_song:
-                    existing_song['total_score'] += row['total_score']  # total_score 더하기
-                else:
-                    new_row = row.copy()
-                    new_row['gender'] = 'MIXED'  # gender를 MIXED로 변경
-                    new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
-                    mixed_data['ALL'].append(new_row)
-                
+                self.update_data(mixed_data["ALL"], row, 'MIXED', 'ALL')
+
                 # 전체 성별 - 특정 연령
                 if age_group != 'ALL':
-                    # mixed_data[age_group]을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
-                    existing_song_mixed = next((item for item in mixed_data[age_group] if item['song_info_id'] == row['song_info_id']), None)
-                    if existing_song_mixed:
-                        existing_song_mixed['total_score'] += row['total_score']  # total_score 더하기
-                    else:
-                        new_row = row.copy()
-                        new_row['gender'] = 'MIXED'
-                        mixed_data[age_group].append(new_row)
-                
+                    self.update_data(mixed_data[age_group], row, 'MIXED')
+
                 # 특정 성별 - 전체 연령
                 if gender == 'MALE':
-                    #male_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
-                    existing_song_male_all = next((item for item in male_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
-                    if existing_song_male_all:
-                        existing_song_male_all['total_score'] += row['total_score']  # total_score 더하기
-                    else:
-                        new_row = row.copy()
-                        new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
-                        male_data['ALL'].append(new_row)
+                    self.update_data(male_data["ALL"], row)
                 elif gender == 'FEMALE':
-                    #female_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
-                    existing_song_female_all = next((item for item in female_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
-                    if existing_song_female_all:
-                        existing_song_female_all['total_score'] += row['total_score']  # total_score 더하기
-                    else:
-                        new_row = row.copy()
-                        new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
-                        female_data['ALL'].append(new_row)
-                    
+                    self.update_data(female_data["ALL"], row)
+
                 # 특정 성별 - 특정 연령
                 if gender == 'MALE' and age_group != 'ALL':
                     male_data[age_group].append(row.copy())
                 elif gender == 'FEMALE' and age_group != 'ALL':
                     female_data[age_group].append(row.copy())
 
-            # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
+            # 상위 20개의 노래와 랭킹 정보 추가
             for age_group in male_data.keys():
-                male_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(male_data[age_group]), previous_data["male"][age_group])
-                female_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(female_data[age_group]), previous_data["female"][age_group])
-                mixed_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(mixed_data[age_group]), previous_data["mixed"][age_group])
+                male_data[age_group] = self.add_ranking_info(
+                    self.get_top_20_by_score(male_data[age_group]), 
+                    previous_data["male"][age_group]
+                )
+                female_data[age_group] = self.add_ranking_info(
+                    self.get_top_20_by_score(female_data[age_group]), 
+                    previous_data["female"][age_group]
+                )
+                mixed_data[age_group] = self.add_ranking_info(
+                    self.get_top_20_by_score(mixed_data[age_group]), 
+                    previous_data["mixed"][age_group]
+                )
 
-            # Redis에 저장할 키 생성
+            # 한 시간 후에 만료될 Redis 키 설정
             one_hour_later = now + timedelta(hours=1)
             formatted_string_for_one_hour_later = one_hour_later.strftime("%Y-%m-%d-%H-Hot_Trend")
 
-            # Redis에 저장 (남성, 여성, 성별미정)
-            for age_group in male_data.keys():
-                male_key = f"{formatted_string_for_one_hour_later}_MALE_{age_group}"
-                female_key = f"{formatted_string_for_one_hour_later}_FEMALE_{age_group}"
-                combined_key = f"{formatted_string_for_one_hour_later}_MIXED_{age_group}"
+            # Redis에 데이터 저장
+            await self.save_to_redis(redis, formatted_string_for_one_hour_later, male_data, "MALE")
+            await self.save_to_redis(redis, formatted_string_for_one_hour_later, female_data, "FEMALE")
+            await self.save_to_redis(redis, formatted_string_for_one_hour_later, mixed_data, "MIXED")
 
-                rdb.set(male_key, json.dumps(male_data[age_group]))
-                rdb.expire(male_key, 4800)
-
-                rdb.set(female_key, json.dumps(female_data[age_group]))
-                rdb.expire(female_key, 4800)
-
-                rdb.set(combined_key, json.dumps(mixed_data[age_group]))
-                rdb.expire(combined_key, 4800)
-
-            rdb.close()
+            await redis.close()
             logger.info("hot trending 갱신 성공")
 
         except KeyError as e:
             logger.error(f"hot trending 갱신 중 KeyError 발생: {str(e)}")
         except Exception as e:
             logger.exception("hot trending 갱신 중 오류 발생")
-            
-            
+
+    def update_data(self, data_list, row, gender='MIXED', age_group=None):
+        existing_song = next((item for item in data_list if item["song_info_id"] == row["song_info_id"]), None)
+        if existing_song:
+            existing_song["total_score"] += row["total_score"]
+        else:
+            new_row = row.copy()
+            new_row["gender"] = gender
+            if age_group:
+                new_row["age_group"] = age_group
+            data_list.append(new_row)
 
     def get_top_20_by_score(self, data_list):
-        # total_score 기준으로 내림차순 정렬 후 상위 20개 추출
-        return sorted(data_list, key=lambda x: x['total_score'], reverse=True)[:20]
-    
+        return sorted(data_list, key=lambda x: x["total_score"], reverse=True)[:20]
+
     def add_ranking_info(self, current_data, previous_data):
-        previous_ranking = {item["song_info_id"]: item["ranking"] for item in previous_data}
+        # 이전 데이터에서 'ranking'이 없으면 기본값 float('inf')로 설정
+        previous_ranking = {item["song_info_id"]: item.get("ranking", float('inf')) for item in previous_data}
 
-        rank = 1
         for idx, item in enumerate(current_data):
-            current_ranking = idx+1  # 1위부터 시작
-            item["ranking"] = current_ranking
+            item["ranking"] = idx + 1  # 현재 데이터의 순위 설정
+            previous_rank = previous_ranking.get(item["song_info_id"], float('inf'))
 
-            # 이전 랭킹과 비교하여 ranking_change 계산
-            previous_rank = previous_ranking.get(item["song_info_id"], None)
-            if previous_rank is None:
-                item["ranking_change"] = 0  # 새로운 노래는 변동 없음
-                item["new"] = 1
+            # 이전 랭킹이 없으면 'new'로 표시하고 ranking_change는 0으로 설정
+            if previous_rank == float('inf'):
+                item["ranking_change"] = 0
+                item["new"] = 1  # 새로 추가된 노래
             else:
-                item["ranking_change"] = previous_rank - current_ranking
-                item["new"] = 0
-            rank = rank + 1
+                item["ranking_change"] = previous_rank - item["ranking"]
+                item["new"] = 0  # 기존에 존재하던 노래
 
         return current_data
+
+    async def save_to_redis(self, redis, base_key, data, gender):
+        for age_group, items in data.items():
+            key = f"{base_key}_{gender}_{age_group}"
+            await redis.set(key, json.dumps(items))
+            await redis.expire(key, 4800)
     
-    def v2_init(self):
-        try: 
-            # 현재 시각과 이후 시각의 데이터를 확인
+    async def v2_init(self):
+        try:
+            redis = await self.setup_redis_config()
+
+            # 현재 및 다음 시간의 Redis 키 생성
             seoul_tz = ZoneInfo('Asia/Seoul')
             now = datetime.now(seoul_tz)
             one_hour_later = now + timedelta(hours=1)
+
+            formatted_string_for_current_time = now.strftime("%Y-%m-%d-%H-Hot_Trend")
             formatted_string_for_one_hour_later = one_hour_later.strftime("%Y-%m-%d-%H-Hot_Trend")
 
+            currentInitKey = f"{formatted_string_for_current_time}_MIXED_ALL"
             nextInitKey = f"{formatted_string_for_one_hour_later}_MIXED_ALL"
-            current = now.strftime("%Y-%m-%d-%H-Hot_Trend")
-            currentInitKey = f"{current}_MIXED_ALL"
 
-            rdb = self.setup_redis_config()
-            currentExists = rdb.exists(currentInitKey)
-            nextExists = rdb.exists(nextInitKey)
-            rdb.close()
+            currentExists = await redis.exists(currentInitKey)
+            nextExists = await redis.exists(nextInitKey)
 
             if not currentExists:
-                # 다음 시각의 데이터가 없는 경우 -> 일단 넣어둠
-                db = self.setup_db_config()
-                cursor = db.cursor()
-                cursor.execute("""     
-                    WITH scored_songs AS (
-                        SELECT
-                            ma.song_info_id,
-                            SUM(ma.action_score) AS total_score,
-                            ma.gender,
-                            CASE
-                                WHEN ma.birthyear = 0 THEN 'ALL'
-                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
-                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
-                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
-                                WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
-                                ELSE 'ALL'
-                            END AS age_group
-                        FROM member_action as ma
-                        WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
-                        GROUP BY ma.song_info_id, ma.gender, age_group
-                    )
-                    SELECT
-                        ss.song_info_id,
-                        ss.total_score,
-                        s.song_name,
-                        s.artist_name,
-                        s.song_number,
-                        s.is_mr,
-                        s.album,
-                        ss.gender,
-                        ss.age_group,
-                        s.melon_song_id
-                    FROM scored_songs ss
-                    JOIN song_info s ON ss.song_info_id = s.song_info_id
-                """)
-                results = cursor.fetchall()
-                db.close()
+                pool = await self.setup_db_config()
+                async with pool.acquire() as conn:
+                    async with conn.cursor() as cursor:
+                        await cursor.execute("""     
+                            WITH scored_songs AS (
+                                SELECT
+                                    ma.song_info_id,
+                                    SUM(ma.action_score) AS total_score,
+                                    ma.gender,
+                                    CASE
+                                        WHEN ma.birthyear = 0 THEN 'ALL'
+                                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 10 AND 19 THEN '10'
+                                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 20 AND 29 THEN '20'
+                                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 BETWEEN 30 AND 39 THEN '30'
+                                        WHEN YEAR(CURDATE()) - ma.birthyear + 1 > 39 THEN '40+'
+                                        ELSE 'ALL'
+                                    END AS age_group
+                                FROM member_action as ma
+                                WHERE ma.CREATED_AT > DATE_SUB(NOW(), INTERVAL 2 WEEK)
+                                GROUP BY ma.song_info_id, ma.gender, age_group
+                            )
+                            SELECT
+                                ss.song_info_id,
+                                ss.total_score,
+                                s.song_name,
+                                s.artist_name,
+                                s.song_number,
+                                s.is_mr,
+                                s.album,
+                                ss.gender,
+                                ss.age_group,
+                                s.melon_song_id
+                            FROM scored_songs ss
+                            JOIN song_info s ON ss.song_info_id = s.song_info_id
+                        """)
+                        results = await cursor.fetchall()
 
-                # is_live 추가 - 임시
-                for _, item in enumerate(results):
+                for item in results:
                     item["is_live"] = 0
 
-                rdb = self.setup_redis_config()
-
-                # Redis에서 이전 데이터 가져오기
-                seoul_tz = ZoneInfo('Asia/Seoul')
-                now = datetime.now(seoul_tz)
+                previous_data = {"male": {}, "female": {}, "mixed": {}}
                 one_hour_before = now - timedelta(hours=1)
                 formatted_string_for_one_hour_before = one_hour_before.strftime("%Y-%m-%d-%H-Hot_Trend")
-                time_key = f"{formatted_string_for_one_hour_before}_MIXED_ALL"
 
-                previous_data = {"male": {}, "female": {}, "mixed": {}}
                 for gender_key in ["MALE", "FEMALE", "MIXED"]:
                     for age_group in ["ALL", "10", "20", "30", "40+"]:
-                        key = f"{time_key}_{gender_key}_{age_group}"
-                        if rdb.exists(key):
-                            current_data = rdb.get(key)
-                            previous_data[gender_key.lower()][age_group] = json.loads(current_data)
+                        key = f"{formatted_string_for_one_hour_before}_{gender_key}_{age_group}"
+                        data = await redis.get(key)
+                        if data:
+                            try:
+                                previous_data[gender_key.lower()][age_group] = json.loads(data)
+                            except json.JSONDecodeError:
+                                logger.warning(f"Invalid JSON for key: {key}. Setting as empty list.")
+                                previous_data[gender_key.lower()][age_group] = []
                         else:
                             previous_data[gender_key.lower()][age_group] = []
 
-                # 성별 및 나이대별로 데이터를 분류하기 위한 저장소
-                male_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
-                female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
-                mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+                male_data, female_data, mixed_data = self.classify_data(results)
 
-                # 남자/여자 데이터를 성별 및 나이대에 맞게 분류
-                for row in results:
-                    gender = row['gender']
-                    age_group = row['age_group']
+                await self.save_to_redis_for_init(redis, formatted_string_for_current_time, male_data, female_data, mixed_data)
+                logger.info("현재 시각의 hot trending 추가 완료")
 
-                    # 전체 성별 - 전체 연령
-                    existing_song = next((item for item in mixed_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
-                    if existing_song:
-                        existing_song['total_score'] += row['total_score']  # total_score 더하기
-                    else:
-                        new_row = row.copy()
-                        new_row['gender'] = 'MIXED'  # gender를 MIXED로 변경
-                        new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
-                        mixed_data['ALL'].append(new_row)
-                    
-                    # 전체 성별 - 특정 연령
-                    if age_group != 'ALL':
-                        # mixed_data[age_group]을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
-                        existing_song_mixed = next((item for item in mixed_data[age_group] if item['song_info_id'] == row['song_info_id']), None)
-                        if existing_song_mixed:
-                            existing_song_mixed['total_score'] += row['total_score']  # total_score 더하기
-                        else:
-                            new_row = row.copy()
-                            new_row['gender'] = 'MIXED'
-                            mixed_data[age_group].append(new_row)
-                    
-                    # 특정 성별 - 전체 연령
-                    if gender == 'MALE':
-                        #male_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
-                        existing_song_male_all = next((item for item in male_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
-                        if existing_song_male_all:
-                            existing_song_male_all['total_score'] += row['total_score']  # total_score 더하기
-                        else:
-                            new_row = row.copy()
-                            new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
-                            male_data['ALL'].append(new_row)
-                    elif gender == 'FEMALE':
-                        #female_data['ALL']을 보고 이미 있다면, score를 더하고, 없다면 데이터 추가
-                        existing_song_female_all = next((item for item in female_data['ALL'] if item['song_info_id'] == row['song_info_id']), None)
-                        if existing_song_female_all:
-                            existing_song_female_all['total_score'] += row['total_score']  # total_score 더하기
-                        else:
-                            new_row = row.copy()
-                            new_row['age_group'] = 'ALL'  # age_group을 ALL로 변경
-                            female_data['ALL'].append(new_row)
-                        
-                    # 특정 성별 - 특정 연령
-                    if gender == 'MALE' and age_group != 'ALL':
-                        male_data[age_group].append(row.copy())
-                    elif gender == 'FEMALE' and age_group != 'ALL':
-                        female_data[age_group].append(row.copy())
-
-                # 각 케이스에 대해 상위 20개의 노래만 자르고 ranking과 ranking_change 추가
-                for age_group in male_data.keys():
-                    male_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(male_data[age_group]), previous_data["male"][age_group])
-                    female_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(female_data[age_group]), previous_data["female"][age_group])
-                    mixed_data[age_group] = self.add_ranking_info(self.get_top_20_by_score(mixed_data[age_group]), previous_data["mixed"][age_group])
-
-                # Redis에 저장할 키 생성
-                seoul_tz = ZoneInfo('Asia/Seoul')
-                now = datetime.now(seoul_tz)
-                formatted_string_for_current_time = now.strftime("%Y-%m-%d-%H-Hot_Trend")
-
-                # Redis에 저장 (남성, 여성, 성별미정)
-                for age_group in male_data.keys():
-                    male_key = f"{formatted_string_for_current_time}_MALE_{age_group}"
-                    female_key = f"{formatted_string_for_current_time}_FEMALE_{age_group}"
-                    combined_key = f"{formatted_string_for_current_time}_MIXED_{age_group}"
-
-                    rdb.set(male_key, json.dumps(male_data[age_group]))
-                    rdb.expire(male_key, 4210)
-
-                    rdb.set(female_key, json.dumps(female_data[age_group]))
-                    rdb.expire(female_key, 4210)
-
-                    rdb.set(combined_key, json.dumps(mixed_data[age_group]))
-                    rdb.expire(combined_key, 4210)
-
-                rdb.close()
-                logger.info("현재시각 hot trending 추가 완료")
-
-            # 다음 시각의 데이터가 없는 경우 -> 일단 넣어둠
             if not nextExists:
-                self.v2_scheduler()
-                logger.info("다음시각 hot trending 추가 완료")
+                await self.v2_scheduler()
+                logger.info("다음 시각의 hot trending 추가 완료")
+
+            await redis.close()
 
         except KeyError as e:
             logger.error(f"hot trending 갱신 중 KeyError 발생: {str(e)}")
         except Exception as e:
             logger.exception("hot trending 갱신 중 오류 발생")
+
+    def classify_data(self, results):
+        male_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+        female_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+        mixed_data = {"ALL": [], "10": [], "20": [], "30": [], "40+": []}
+
+        for row in results:
+            gender = row['gender']
+            age_group = row['age_group']
+
+            self.update_data(mixed_data["ALL"], row, 'MIXED', 'ALL')
+            if age_group != 'ALL':
+                self.update_data(mixed_data[age_group], row, 'MIXED')
+
+            if gender == 'MALE':
+                self.update_data(male_data["ALL"], row)
+                if age_group != 'ALL':
+                    male_data[age_group].append(row.copy())
+            elif gender == 'FEMALE':
+                self.update_data(female_data["ALL"], row)
+                if age_group != 'ALL':
+                    female_data[age_group].append(row.copy())
+
+        return male_data, female_data, mixed_data
+
+    def update_data(self, data_list, row, gender='MIXED', age_group=None):
+        existing_song = next((item for item in data_list if item["song_info_id"] == row["song_info_id"]), None)
+        if existing_song:
+            existing_song["total_score"] += row["total_score"]
+        else:
+            new_row = row.copy()
+            new_row["gender"] = gender
+            if age_group:
+                new_row["age_group"] = age_group
+            data_list.append(new_row)
+
+    async def save_to_redis_for_init(self, redis, base_key, male_data, female_data, mixed_data):
+        for age_group in male_data.keys():
+            male_key = f"{base_key}_MALE_{age_group}"
+            female_key = f"{base_key}_FEMALE_{age_group}"
+            mixed_key = f"{base_key}_MIXED_{age_group}"
+
+            await redis.set(male_key, json.dumps(male_data[age_group]))
+            await redis.expire(male_key, 4210)
+
+            await redis.set(female_key, json.dumps(female_data[age_group]))
+            await redis.expire(female_key, 4210)
+
+            await redis.set(mixed_key, json.dumps(mixed_data[age_group]))
+            await redis.expire(mixed_key, 4210)

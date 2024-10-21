@@ -74,4 +74,5 @@ services:
 
 networks:
   default:
+    name: milvus_network
     driver: bridge
