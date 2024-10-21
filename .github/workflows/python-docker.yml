@@ -1,13 +1,9 @@
-name: Build and Push Docker Image
+name: Build and Push Docker Image to Raspberry pi
 
 on:
   push:
     branches:
-      - develop
-  pull_request:
-    branches:
-      - main
-
+      - feat/#1
 jobs:
   build:
     runs-on: ubuntu-latest
