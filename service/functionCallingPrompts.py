@@ -106,6 +106,7 @@ class PromptsForFunctionCalling:
                         However, be cautious and only add gender information if it is explicitly and clearly requested by the user. 
                         Avoid adding gender-related conditions unless the query explicitly contains gender-specific terms. If the query includes non-gender-related terms like nationalities (e.g., 'Korean', 'Japanese'), set the gender to `None`. 
                         If gender does not matter or is not mentioned, set it to `None`.)
+                    - If the user asks for 'Band' or '밴드' songs, consider it as a group performance and genre should be '락/메탈'.
                     - **Extract**: year, genre(as List), gender (female/male/mixed, if not provided return None), performance type (solo/group), country (If not provided, return `None` or an empty list).
                     - When extracting **year** think about the following:
                         - if the user asks for a specific year, return the songs from that year. (e.g., "2020년도 노래 추천해줘" then return `year == 2020`)
