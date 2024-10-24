@@ -2,6 +2,7 @@ import grpc
 import logging
 import asyncio
 import signal
+from ddtrace import tracer
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 비동기 스케줄러
 from service.userProfileService import UserProfileService
 from service.userProfileServiceGrpc import UserProfileServiceGrpc
@@ -80,6 +81,8 @@ def register_signal_handlers(loop):
 # 비동기 메인 함수
 async def main():
     global scheduler
+
+    tracer.configure(port=8126, https=False)
 
     # HotTrendingService 및 크롤링 서비스 초기화
     await hot_trending_service.v2_init()

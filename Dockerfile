@@ -11,6 +11,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 애플리케이션 코드 복사
 COPY . .
 
+ENV DD_SERVICE="singsong-embedding"
+ENV DD_ENV="prod"
+ENV DD_VERSION="0.0.1"
+
 # gRPC 서버 포트 노출
 EXPOSE 50051
 
