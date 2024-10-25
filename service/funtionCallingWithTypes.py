@@ -871,6 +871,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
         """
         try:
             songInfos = []
+            message = "유사한 노래를 찾지 못했습니다."
             try:
                 logging.info(f"Received query: {query}")
                 query_type, Results = await self.determine_query_type(query)
