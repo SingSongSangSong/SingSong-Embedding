@@ -54,7 +54,7 @@ class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
             Tool(
                 name="retriever",
                 func=lambda query: self.retriever.get_relevant_documents(query),  # Wrap func in lambda
-                description="""Use this to retrieve relevant documents from the Milvus collection. For example, 'songs similar to BTS songs', 'songs about break up' or 'dance songs which are relased around 2010s."""
+                description="""Use this to retrieve relevant documents from the Milvus collection using vector cosine similarity. all the vector contains song information such as song name, artist name, genre, year, country, artist type, artist gender, lyrics summary, tags and stuff.""",
             )
         ]
         # Define prompt template

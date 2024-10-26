@@ -107,6 +107,7 @@ class PromptsForFunctionCalling:
                         Avoid adding gender-related conditions unless the query explicitly contains gender-specific terms. If the query includes non-gender-related terms like nationalities (e.g., 'Korean', 'Japanese'), set the gender to `None`. 
                         If gender does not matter or is not mentioned, set it to `None`.)
                     - If the user asks for 'Band' or '밴드' songs, consider it as a group performance and genre should be '록/메탈'.
+                    - If the user asks for Hit songs, or Hot songs or '핫한 노래', consider it as this year's hit songs.
                     - **Extract**: year, genre(as List), gender (female/male/mixed, if not provided return None), performance type (solo/group), country (If not provided, return `None` or an empty list).
                     - When extracting **year** think about the following:
                         - if the user asks for a specific year, return the songs from that year. (e.g., "2020년도 노래 추천해줘" then return `year == 2020`)
@@ -154,11 +155,12 @@ class PromptsForFunctionCalling:
                         - "여자 가수들의 힙합곡 추천".
                     - Output query type as 'year_gender_genre'.
 
-                It's important to ensure that the query fits into only one of these nine categories. If the user input is unclear, make your best effort to infer the most likely category.
+                It's important to ensure that the query fits into only one of these seven categories. If the user input is unclear, make your best effort to infer the most likely category.
                 Always extract all the relevant fields, even if the information is missing, by returning `None` or an empty list where applicable.
 
                 Format:
-                - Query Type: <single_song_artist/multiple_song_artist/octave_key/song_artist_octave/hit_songs/vocal_range/situation/year_gender_genre>
+                - Query Type: <single_song_artist/multiple_song_artist/octave_key/song_artist_octave/vocal_range/situation/year_gender_genre>
+                               (If the input does not match any of these types, set it to `None`)
                 - Song Name: [<song_name1>, <song_name2>, ...] (If applicable, otherwise `[]`)
                 - Artist Name: [<artist_name1>, <artist_name2>, ...] (If applicable, otherwise `[]`)
                 - Octave: <octave_info>(`MAX [pitch]`/`MIN [pitch]`) (If applicable, otherwise `None`)

@@ -18,7 +18,7 @@ class FunctionCallingWithTypesRequest(_message.Message):
     def __init__(self, memberId: _Optional[int] = ..., gender: _Optional[str] = ..., year: _Optional[str] = ..., command: _Optional[str] = ...) -> None: ...
 
 class SongInfo(_message.Message):
-    __slots__ = ("songNumber", "songName", "artistName", "songInfoId", "album", "isMr", "isLive", "melonSongId")
+    __slots__ = ("songNumber", "songName", "artistName", "songInfoId", "album", "isMr", "isLive", "melonSongId", "lyricsYoutubeLink", "tjYoutubeLink")
     SONGNUMBER_FIELD_NUMBER: _ClassVar[int]
     SONGNAME_FIELD_NUMBER: _ClassVar[int]
     ARTISTNAME_FIELD_NUMBER: _ClassVar[int]
@@ -27,6 +27,8 @@ class SongInfo(_message.Message):
     ISMR_FIELD_NUMBER: _ClassVar[int]
     ISLIVE_FIELD_NUMBER: _ClassVar[int]
     MELONSONGID_FIELD_NUMBER: _ClassVar[int]
+    LYRICSYOUTUBELINK_FIELD_NUMBER: _ClassVar[int]
+    TJYOUTUBELINK_FIELD_NUMBER: _ClassVar[int]
     songNumber: int
     songName: str
     artistName: str
@@ -35,7 +37,9 @@ class SongInfo(_message.Message):
     isMr: bool
     isLive: bool
     melonSongId: str
-    def __init__(self, songNumber: _Optional[int] = ..., songName: _Optional[str] = ..., artistName: _Optional[str] = ..., songInfoId: _Optional[int] = ..., album: _Optional[str] = ..., isMr: bool = ..., isLive: bool = ..., melonSongId: _Optional[str] = ...) -> None: ...
+    lyricsYoutubeLink: str
+    tjYoutubeLink: str
+    def __init__(self, songNumber: _Optional[int] = ..., songName: _Optional[str] = ..., artistName: _Optional[str] = ..., songInfoId: _Optional[int] = ..., album: _Optional[str] = ..., isMr: bool = ..., isLive: bool = ..., melonSongId: _Optional[str] = ..., lyricsYoutubeLink: _Optional[str] = ..., tjYoutubeLink: _Optional[str] = ...) -> None: ...
 
 class FunctionCallingWithTypesResponse(_message.Message):
     __slots__ = ("songInfos", "message")

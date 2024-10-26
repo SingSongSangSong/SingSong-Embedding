@@ -15,6 +15,7 @@ from langchain_openai import OpenAIEmbeddings
 from proto.functionCallingWithTypes.functionCallingWithTypes_pb2 import FunctionCallingWithTypesResponse, SongInfo
 from proto.functionCallingWithTypes.functionCallingWithTypes_pb2_grpc import FunctionCallingWithTypesRecommendServicer
 from service.functionCallingPrompts import PromptsForFunctionCalling, ExtractCommonTraitService
+from service.langchainServiceAgentGrpc import LangChainServiceAgentGrpc
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -486,7 +487,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                         
                         # 해당 옥타브에서 노래를 melon_likes 기준으로 가져옴
                         await cursor.execute(f"""
-                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM song_info
                             WHERE octave = %s and is_mr = 0 and is_live = 0 {gender_filter}
                             ORDER BY melon_likes DESC
@@ -497,7 +498,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                         # melon_likes에서 일부는 랜덤으로 선택
                         random.shuffle(songs)
                         selected_songs = songs[:proportion_count]
-                        results.extend([SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id']) for song in selected_songs])
+                        results.extend([SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id'], lyricsYoutubeLink=song['lyrics_video_link'], tjYoutubeLink=song['tj_youtube_link']) for song in selected_songs])
 
                         remaining_needed -= len(selected_songs)
                         if remaining_needed <= 0:
@@ -577,9 +578,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     if found_artist_name:
                         # artist_name이 존재하는 경우
                         await cursor.execute("""
-                            SELECT song_info_id
+                            SELECT song_info_id, song_number, song_name, artist_name, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM (
-                                SELECT song_info_id
+                                SELECT song_info_id, song_number, song_name, artist_name, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
                                 WHERE artist_name = %s
                                 ORDER BY melon_likes DESC
@@ -591,9 +592,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     else:
                         # artist_name이 존재하지 않는 경우
                         await cursor.execute("""
-                            SELECT song_info_id
+                            SELECT song_info_id, song_number, song_name, artist_name, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM (
-                                SELECT song_info_id
+                                SELECT song_info_id, song_number, song_name, artist_name, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
                                 ORDER BY melon_likes DESC
                                 LIMIT 1500
@@ -605,7 +606,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     songs = await cursor.fetchall()
 
             # 결과 반환 (랜덤으로 20곡 선택)
-            song_info_ids = [song['song_info_id'] for song in songs]
+            song_info_ids = [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id'], lyricsYoutubeLink=song['lyrics_video_link'], tjYoutubeLink=song['tj_youtube_link']) for song in songs]
             return song_info_ids, "인기 있는 노래를 추천합니다."
 
         except Exception as e:
@@ -637,9 +638,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     # Handle high vocal range
                     if vocal_range == "high":
                         await cursor.execute(f"""
-                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM (
-                                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
                                 WHERE high = 1 {gender_filter} and is_mr = 0 and is_live = 0
                                 ORDER BY melon_likes DESC
@@ -652,9 +653,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     # Handle low vocal range
                     elif vocal_range == "low":
                         await cursor.execute(f"""
-                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM (
-                                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
                                 WHERE low = 1 {gender_filter} and is_mr = 0 and is_live = 0
                                 ORDER BY melon_likes DESC
@@ -665,7 +666,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                         """)
 
                     songs = await cursor.fetchall()
-            return [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id']) for song in songs], f"{vocal_range} 음역대의 노래를 추천합니다."
+            return [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id'], lyricsYoutubeLink=song['lyrics_video_link'], tjYoutubeLink=song['tj_youtube_link']) for song in songs], f"{vocal_range} 음역대의 노래를 추천합니다."
         
         except Exception as e:
             logger.error(f"Failed to handle vocal range: {e}")
@@ -719,9 +720,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                             remaining_songs -= limit_per_situation  # 남은 노래 수 차감
 
                         await cursor.execute(f"""
-                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                            SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM (
-                                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
                                 WHERE {s} = 1 and is_mr = 0 and is_live = 0{gender_filter}
                                 ORDER BY melon_likes DESC
@@ -733,7 +734,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                         songs = await cursor.fetchall()
 
                         # 결과를 합산하여 리스트에 추가
-                        return_situation_list.extend([SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id']) for song in songs])
+                        return_situation_list.extend([SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id'], lyricsYoutubeLink=song['lyrics_video_link'], tjYoutubeLink=song['tj_youtube_link']) for song in songs])
 
             # 모든 상황에 대해 검색한 노래 ID 리스트 반환
             return return_situation_list, ", ".join(valid_situations) + " 상황에 어울리는 노래를 추천합니다."
@@ -756,9 +757,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
 
             # 기본 SQL 쿼리 시작 부분
             base_query = """
-                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                 FROM (
-                    SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id
+                    SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                     FROM song_info
                     WHERE 1=1 and is_mr = 0 and is_live = 0
             """
@@ -822,7 +823,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     songs = await cursor.fetchall()
 
             # 결과 반환
-            return [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id']) for song in songs], "조건에 맞는 노래를 추천합니다."
+            return [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id'], lyricsYoutubeLink=song['lyrics_video_link'], tjYoutubeLink=song['tj_youtube_link']) for song in songs], "조건에 맞는 노래를 추천합니다."
 
         except Exception as e:
             logger.error(f"Failed to handle year, gender, or genre: {e}")
@@ -849,7 +850,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                             is_mr, 
                             is_live, 
                             melon_song_id,
-                            COALESCE(melon_likes, 0) AS melon_likes
+                            COALESCE(melon_likes, 0) AS melon_likes,
+                            lyrics_video_link,
+                            tj_youtube_link
                         FROM song_info
                         WHERE song_info_id IN %s
                         ORDER BY melon_likes DESC
@@ -857,13 +860,43 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     # 튜플로 song_info_ids를 넘겨줍니다.
                     await cursor.execute(query, (tuple(song_info_ids),))
                     song_infos = await cursor.fetchall()
-                    result = [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id']) for song in song_infos]
+                    result = [SongInfo(songNumber=song['song_number'], songName=song['song_name'], artistName=song['artist_name'], songInfoId=song['song_info_id'], album=song['album'], isMr=song['is_mr'], isLive=song['is_live'], melonSongId=song['melon_song_id'], lyricsYoutubeLink=song['lyrics_video_link'], tjYoutubeLink=song['tj_youtube_link']) for song in song_infos]
 
             return result
 
         except Exception as e:
             logger.error(f"Failed to get song info: {e}")
             return None
+
+    # async def handle_features_with_agent(self, query:str, features: QueryType):
+    #     """
+    #     Handles queries with multiple features (genre, year, country, artist type, artist gender, etc.).
+    #     """
+    #     langchainService = LangChainServiceAgentGrpc()
+
+    #     try:
+    #         # Step 1: Extract the features from the query
+    #         song_name = features.song_name
+    #         artist_name = features.artist_name
+    #         genre = features.genre
+    #         year = features.year
+    #         country = features.country
+    #         octave = features.octave
+    #         vocal_range = features.vocal_range
+    #         situation = features.situation
+    #         country = features.country
+    #     except Exception as e:
+    #         logger.error(f"Failed to extract features: {e}")
+    #         return None, "특징을 추출하는 중 오류가 발생했습니다."
+    
+    #     try:
+    #         # Step 2: Prepare the query for the LangChain service
+    #         query = f"User Query: {query} \n Information extracted from query: \n Title : {song_name} Artist : {artist_name} Genre : {genre} Year : {year} Country : {country} Octave : {octave} VocalRange : {vocal_range} Situation : {situation}"
+    #         response = await langchainService.run(query)
+    #         song_info_ids = response.song_info_ids
+    #         message = response.message
+
+    #         return song_info_ids, message
 
     async def run(self, query: str):
         """
@@ -904,6 +937,9 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 elif query_type == "year_gender_genre":
                     songInfos, message = await self.handle_year_gender_genre(Results.year, Results.gender, Results.genre, Results.country)
                     logging.info(f"song_info_ids from year gender genre query: {songInfos}")
+                # elif query_type == "None":
+                #     songInfos, message = await self.handle_features_with_agent(query, Results)
+                #     logging.info(f"song_info_ids from features query: {songInfos}")
                 else:
                     logging.info("No valid query type found")
                     

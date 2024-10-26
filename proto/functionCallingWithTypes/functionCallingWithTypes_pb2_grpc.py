@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from proto.functionCallingWithTypes import functionCallingWithTypes_pb2 as functionCallingWithTypes_dot_functionCallingWithTypes__pb2
+from proto.functionCallingWithTypes import functionCallingWithTypes_pb2 as proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2
 
 GRPC_GENERATED_VERSION = '1.67.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + f' but the generated code in functionCallingWithTypes/functionCallingWithTypes_pb2_grpc.py depends on'
+        + f' but the generated code in proto/functionCallingWithTypes/functionCallingWithTypes_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -37,8 +37,8 @@ class FunctionCallingWithTypesRecommendStub(object):
         """
         self.GetFunctionCallingWithTypesRecommendation = channel.unary_unary(
                 '/functionCallingWithTypes.FunctionCallingWithTypesRecommend/GetFunctionCallingWithTypesRecommendation',
-                request_serializer=functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesRequest.SerializeToString,
-                response_deserializer=functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesResponse.FromString,
+                request_serializer=proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesRequest.SerializeToString,
+                response_deserializer=proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesResponse.FromString,
                 _registered_method=True)
 
 
@@ -57,8 +57,8 @@ def add_FunctionCallingWithTypesRecommendServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetFunctionCallingWithTypesRecommendation': grpc.unary_unary_rpc_method_handler(
                     servicer.GetFunctionCallingWithTypesRecommendation,
-                    request_deserializer=functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesRequest.FromString,
-                    response_serializer=functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesResponse.SerializeToString,
+                    request_deserializer=proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesRequest.FromString,
+                    response_serializer=proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -87,8 +87,8 @@ class FunctionCallingWithTypesRecommend(object):
             request,
             target,
             '/functionCallingWithTypes.FunctionCallingWithTypesRecommend/GetFunctionCallingWithTypesRecommendation',
-            functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesRequest.SerializeToString,
-            functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesResponse.FromString,
+            proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesRequest.SerializeToString,
+            proto_dot_functionCallingWithTypes_dot_functionCallingWithTypes__pb2.FunctionCallingWithTypesResponse.FromString,
             options,
             channel_credentials,
             insecure,
