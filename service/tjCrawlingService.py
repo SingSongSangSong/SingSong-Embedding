@@ -200,6 +200,9 @@ class TJCrawlingService:
             for i in range(0, len(results), batch_size):
                 batch = results[i:i + batch_size]
                 self.process_batch_genre_date_album(batch, driver, cursor, connection)
+            
+            cursor.close()
+            connection.close()
         except Exception as e:
             logger.error(f"장르, 발매일, 앨범 정보 크롤링 중 오류 발생: {e}")
             raise
@@ -312,6 +315,9 @@ class TJCrawlingService:
             for i in range(0, len(songs), batch_size):
                 batch = songs[i:i + batch_size]
                 self.process_batch(batch, driver, cursor, connection)
+            
+            cursor.close()
+            connection.close()
         except Exception as e:
             logger.error(f"멜론 곡 ID 및 앨범 이미지 크롤링 중 오류 발생: {e}")
             raise
