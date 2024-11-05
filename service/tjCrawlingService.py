@@ -206,6 +206,9 @@ class TJCrawlingService:
         except Exception as e:
             logger.error(f"장르, 발매일, 앨범 정보 크롤링 중 오류 발생: {e}")
             raise
+        finally:
+            cursor.close()
+            connection.close()
 
     def extract_year(self, date_str):
         try:
@@ -321,6 +324,9 @@ class TJCrawlingService:
         except Exception as e:
             logger.error(f"멜론 곡 ID 및 앨범 이미지 크롤링 중 오류 발생: {e}")
             raise
+        finally:
+            cursor.close()
+            connection.close()
 
     def find_highest_similarity_match(self, title, artist, results):
         """유사도가 0.6 이상인 항목 중 가장 높은 유사한 항목 선택."""
@@ -501,3 +507,4 @@ class TJCrawlingService:
             except Exception as e:
                 logger.error(f"Failed to retrieve the Song ID for {title} by {artist}: {e}")
                 continue
+            
