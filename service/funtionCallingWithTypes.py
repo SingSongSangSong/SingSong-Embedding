@@ -613,7 +613,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             print(f"Error: {e}")
             return [], "인기 있는 노래를 찾지 못했습니다."
 
-    async def handle_vocal_range(self, vocal_range, gender):
+    async def handle_vocal_range(self, vocal_range, gender, genre):
         """
         Handles vocal range queries (high or low) with an optional gender filter (남성, 여성, 혼성).
         """
@@ -629,20 +629,32 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     # 성별 처리
                     if gender and gender.lower().strip() in ["male", "female", "mixed"]:
                         if gender.lower().strip() == "male":
-                            gender_filter = f" AND artist_gender = '남성'"
+                            gender_filter = " AND artist_gender = '남성'"
                         elif gender.lower().strip() == "female":
-                            gender_filter = f" AND artist_gender = '여성'"
+                            gender_filter = " AND artist_gender = '여성'"
                         elif gender.lower().strip() == "mixed":
-                            gender_filter = f" AND artist_gender = '혼성'"    
+                            gender_filter = " AND artist_gender = '혼성'" 
 
-                    # Handle high vocal range
+                    # 유효한 장르만 필터링
+                    valid_genres = [a_genre.strip() for a_genre in genre if a_genre.strip() and a_genre.strip() in genre_list]
+
+                    # 장르 처리
+                    genre_filter = ""
+                    if valid_genres:
+                        # 각각의 장르에 대해 'genre = 장르' 조건을 추가하고 OR로 묶음
+                        genre_conditions = " OR ".join(f"genre = '{g}'" for g in valid_genres)
+                        genre_filter = f" AND ({genre_conditions})"
+
+                    print(gender_filter + genre_filter) 
+
+                    # Handle high vocal range with combined filters
                     if vocal_range == "high":
                         await cursor.execute(f"""
                             SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                             FROM (
                                 SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
-                                WHERE high = 1 {gender_filter} and is_mr = 0 and is_live = 0
+                                WHERE high = 1 {gender_filter} {genre_filter} AND is_mr = 0 AND is_live = 0
                                 ORDER BY melon_likes DESC
                                 LIMIT 500
                             ) AS top_songs
@@ -657,7 +669,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                             FROM (
                                 SELECT song_number, song_name, artist_name, song_info_id, album, is_mr, is_live, melon_song_id, lyrics_video_link, tj_youtube_link
                                 FROM song_info
-                                WHERE low = 1 {gender_filter} and is_mr = 0 and is_live = 0
+                                WHERE low = 1 {gender_filter} {genre_filter} and is_mr = 0 and is_live = 0
                                 ORDER BY melon_likes DESC
                                 LIMIT 500
                             ) AS top_songs
@@ -929,7 +941,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     songInfos, message = await self.handle_hit_songs(Results.artist_name)
                     logging.info(f"song_info_ids from hit_songs query: {songInfos}")
                 elif query_type == "vocal_range":
-                    songInfos, message = await self.handle_vocal_range(Results.vocal_range, Results.gender)
+                    songInfos, message = await self.handle_vocal_range(Results.vocal_range, Results.gender, Results.genre)
                     logging.info(f"song_info_ids from vocal_range query: {songInfos}")
                 elif query_type == "situation":
                     songInfos, message = await self.handle_situation(Results.situation, Results.gender)

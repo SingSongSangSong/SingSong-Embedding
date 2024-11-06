@@ -14,8 +14,12 @@ def run():
         # LangchainRecommendStub을 사용해 서버와 통신
         stub = FunctionCallingWithTypesRecommendStub(channel)
 
+        prompts  = [
+            "낮은 J-POP 추천해줘"
+        ]
+
         # 테스트할 프롬프트 리스트
-        prompts = [
+        prompts2 = [
             "30대 남자가 부르기 어려운 노래 추천해줘",
             "2000년도부터 2010년 사이에 나온 노래 추천해줘",
             "최고음 3옥타브레 인 노래 추천해줘",
