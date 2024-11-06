@@ -66,7 +66,7 @@ class PromptsForFunctionCalling:
 
                 5. **Vocal Range (High/Low) Query:**
                     - If the user asks for songs based on vocal range, such as high-pitched or low-pitched songs or difficulty related to singing (e.g., easy or hard songs).
-                    - **Extract**: vocal range (high/low) (If not provided, return `None`). If user mention easy it means low and hard means high.
+                    - **Extract**: vocal range (high/low) (If not provided, return `None`). If user mention easy it means low and hard means high. and other information such as gender or genre if provided.
                     - **For example**:
                         - "고음 자신 있는데, 고음 폭발하는 곡 추천해줘".
                         - "남자 저음발라드 추천해줘".
