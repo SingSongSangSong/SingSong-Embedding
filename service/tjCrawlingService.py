@@ -7,15 +7,9 @@ from dotenv import load_dotenv
 import random
 import re
 import time
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from fuzzywuzzy import fuzz  # 유사도 측정
 import logging
 import pymysql
-from selenium.common.exceptions import NoSuchElementException
 
 # .env 파일 로드
 load_dotenv()
@@ -31,22 +25,6 @@ class TJCrawlingService:
         self.db_password = os.getenv('DB_PASSWORD')
         self.db_database = os.getenv('DB_DATABASE')
         self.db_port = 3306
-    
-    def init_webdriver(self):
-        """Initialize Selenium WebDriver with Chrome."""
-        user_agents = [
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.110 Safari/537.36",
-            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
-        ]
-        user_agent = random.choice(user_agents)
-        options = Options()
-        options.add_argument(f'user-agent={user_agent}')
-        options.add_argument('--headless')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        driver = webdriver.Chrome(options=options)
-        driver.implicitly_wait(5)
-        return driver
 
     def setup_db_config(self):
         try:
@@ -111,7 +89,6 @@ class TJCrawlingService:
         except Exception as e:
             logger.error(f"데이터베이스에서 읽기 중 오류 발생: {e}")
             raise
-
      
     def crawl_new_songs(self):
         try:
@@ -178,7 +155,6 @@ class TJCrawlingService:
     def crawl_genre_date_album(self, songs):
         try:
             batch_size = 20
-            driver = self.init_webdriver()
             connection = self.setup_db_config()
             cursor = connection.cursor()
 
@@ -199,10 +175,8 @@ class TJCrawlingService:
 
             for i in range(0, len(results), batch_size):
                 batch = results[i:i + batch_size]
-                self.process_batch_genre_date_album(batch, driver, cursor, connection)
-            
-            cursor.close()
-            connection.close()
+                self.process_batch_genre_date_album(batch, cursor, connection)
+
         except Exception as e:
             logger.error(f"장르, 발매일, 앨범 정보 크롤링 중 오류 발생: {e}")
             raise
@@ -224,9 +198,15 @@ class TJCrawlingService:
             logger.error(f"Error extracting year from date string {date_str}: {e}")
             return None
 
-    
-    def process_batch_genre_date_album(self, batch, driver, cursor, connection):
-        """20개 단위로 멜론 데이터를 처리하고 업데이트합니다."""
+    def process_batch_genre_date_album(self, batch, cursor, connection):
+        """20개 단위로 멜론 데이터를 BeautifulSoup을 사용해 처리하고 업데이트합니다."""
+        headers = {
+            "User-Agent": random.choice([
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.110 Safari/537.36",
+                "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
+            ])
+        }
+
         for song in batch:
             try:
                 song_number = song['song_number']
@@ -234,18 +214,27 @@ class TJCrawlingService:
                 song_name = song['song_name']
                 artist_name = song['artist_name']
 
-                # 멜론 곡 상세 페이지로 이동
-                driver.get(f"https://www.melon.com/song/detail.htm?songId={melon_song_id}")
+                # 멜론 곡 상세 페이지로 요청
+                url = f"https://www.melon.com/song/detail.htm?songId={melon_song_id}"
+                response = requests.get(url, headers=headers)
 
+                if response.status_code != 200:
+                    logger.error(f"Failed to fetch page for song {song_name} by {artist_name}: Status code {response.status_code}")
+                    continue
+
+                # BeautifulSoup으로 HTML 파싱
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                # 장르, 발매일, 앨범 이미지 URL 추출
                 try:
-                    genre = driver.find_element(By.XPATH, '//dt[text()="장르"]/following-sibling::dd').text.strip()
-                    release_date = driver.find_element(By.XPATH, '//*[@id="downloadfrm"]/div/div/div[2]/div[2]/dl/dd[2]').text.strip()
-                    album_image_url = driver.find_element(By.XPATH, '//*[@id="downloadfrm"]/div/div/div[1]/a/img').get_attribute('src')
+                    genre = soup.select_one('dt:contains("장르") + dd').text.strip()
+                    release_date = soup.select_one('#downloadfrm > div > div > div:nth-of-type(2) > div:nth-of-type(2) > dl > dd:nth-of-type(2)').text.strip()
+                    album_image_url = soup.select_one('#downloadfrm > div > div > div:nth-of-type(1) > a > img')['src']
                 except Exception as e:
                     logger.error(f"Error scraping Melon data for song {song_name} by {artist_name}: {e}")
                     continue
-            
-                if release_date is not None:
+
+                if release_date:
                     release_date = self.extract_year(release_date)
 
                 # 데이터 업데이트
@@ -264,7 +253,7 @@ class TJCrawlingService:
                     logger.error(f"Error updating the database for song {song_name} by {artist_name}: {e}")
                     connection.rollback()
 
-                time.sleep(random.randrange(12,20))  # 6-10초 랜덤 지연
+                time.sleep(random.randrange(12, 20))  # 12-20초 랜덤 지연
 
             except Exception as e:
                 logger.error(f"Error processing batch for song {song_name} by {artist_name}: {e}")
@@ -311,16 +300,13 @@ class TJCrawlingService:
     def crawl_melon_song_id_and_album(self, songs):
         try:
             batch_size = 20
-            driver = self.init_webdriver()
             connection = self.setup_db_config()
             cursor = connection.cursor()
 
             for i in range(0, len(songs), batch_size):
                 batch = songs[i:i + batch_size]
-                self.process_batch(batch, driver, cursor, connection)
+                self.process_batch(batch, cursor, connection)
             
-            cursor.close()
-            connection.close()
         except Exception as e:
             logger.error(f"멜론 곡 ID 및 앨범 이미지 크롤링 중 오류 발생: {e}")
             raise
@@ -331,19 +317,37 @@ class TJCrawlingService:
     def find_highest_similarity_match(self, title, artist, results):
         """유사도가 0.6 이상인 항목 중 가장 높은 유사한 항목 선택."""
 
+        def remove_spaces_if_korean(text):
+            # 텍스트가 모두 한글인 경우 띄어쓰기를 제거
+            if re.fullmatch(r'[가-힣]+', text.replace(" ", "")):
+                return text.replace(" ", "")
+            return text
+    
+        def remove_brackets(text):
+            # 괄호와 괄호 안의 내용을 제거
+            return re.sub(r'\(.*?\)', '', text).strip()
+
         try:
             valid_matches = []
+
+            # title과 artist에 한국어가 포함된 경우 띄어쓰기 제거
+            title = remove_spaces_if_korean(title.strip())
+            artist = remove_spaces_if_korean(artist.strip())
 
             # 유사도 계산 후 0.6 이상인 항목 추가
             for result in results:
                 result_song_name, result_artist_name, result_song_id = result
-                song_name_similarity = fuzz.ratio(title.lower(), result_song_name.lower()) / 100
-                artist_name_similarity = fuzz.ratio(artist.lower(), result_artist_name.lower()) / 100
+                result_artist_name = remove_brackets(result_artist_name)  # 괄호 안의 내용 제거
+                result_song_name = remove_brackets(result_song_name)  # 괄호 안의 내용 제거
+
+                song_name_similarity = fuzz.ratio(title.lower(), result_song_name.lower().strip()) / 100
+                artist_name_similarity = fuzz.ratio(artist.lower(), result_artist_name.lower().strip()) / 100
                 avg_similarity = (song_name_similarity + artist_name_similarity) / 2
 
                 if song_name_similarity >= 0.5 and artist_name_similarity >= 0.25 and avg_similarity >= 0.5:
                     valid_matches.append((avg_similarity, result_song_name, result_artist_name, result_song_id))
-                print(f"Title: {result_song_name}, Arist: {result_artist_name} Aritst Similiarity: {artist_name_similarity}, AVG Similarity: {avg_similarity}")
+                
+                print(f"TJ Title: {title}, Title: {result_song_name}, TJ Artist: {artist}, Arist: {result_artist_name}, Song Name Similarity: {song_name_similarity}, Aritst Similiarity: {artist_name_similarity}, AVG Similarity: {avg_similarity}")
 
             # 가장 유사도가 높은 항목 선택 (같은 유사도인 경우 첫 번째 항목 사용)
             if valid_matches:
@@ -385,24 +389,30 @@ class TJCrawlingService:
         """아티스트 이름에서 괄호와 그 안의 내용 제거."""
         return re.sub(r'\([^)]*\)', '', artist_name).strip()  # 괄호와 내용 제거 후 공백 제거
 
-    def process_batch(self, batch, driver, cursor, connection):
-        """20개 단위로 멜론 데이터를 처리하고 업데이트합니다."""
+    def process_batch(self, batch, cursor, connection):
+        """20개 단위로 멜론 데이터를 BeautifulSoup으로 처리하고 업데이트합니다."""
         
         def search_melon(title, artist):
             """멜론에서 노래와 아티스트로 검색을 수행"""
+            headers = {
+                "User-Agent": random.choice([
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.110 Safari/537.36",
+                    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0"
+                ])
+            }
             search_url = f'https://www.melon.com/search/song/index.htm?q={title}+{artist}'
-            driver.get(search_url)
-            time.sleep(random.randrange(12, 20))  # 페이지 로딩 대기
-            try:
-                song_list = driver.find_element(By.XPATH, '//*[@id="frm_defaultList"]/div/table/tbody')
-                rows = song_list.find_elements(By.TAG_NAME, 'tr')[:3]  # 상위 3개만 가져오기
-                return rows
-            except NoSuchElementException:
-                print("Element not found")
+            response = requests.get(search_url, headers=headers)
+            time.sleep(random.uniform(1, 3))  # 페이지 로딩 대기
+
+            if response.status_code != 200:
+                print(f"Failed to fetch page for {title} by {artist}: Status code {response.status_code}")
                 return []
-            except Exception as e:
-                print(f"Error fetching song list: {e}")
-                return []
+
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # 상위 3개의 결과 추출
+            rows = soup.select('#frm_defaultList > div > table > tbody > tr')[:3]
+            return rows
 
         for song in batch:
             try:
@@ -438,50 +448,35 @@ class TJCrawlingService:
                     
                     search_results = []
                     
-                    try:
-                        for row in rows:
-                            try:
-                                ## 곡 이름 추출
-                                cells = row.find_elements(By.TAG_NAME, 'td')
-                                td_with_button = cells[2]
-                                song_name = td_with_button.find_element(By.CSS_SELECTOR, 'div > div > a.fc_gray')
-                                song_name = song_name.text
-                                song_id = None
+                    for row in rows:
+                        try:
+                            # 곡 이름 추출
+                            song_name_tag = row.select_one('td:nth-of-type(3) a.fc_gray')
+                            song_name = song_name_tag.text.strip() if song_name_tag else None
+                            song_id = None
 
-                                # 링크에서 곡 ID 추출
-                                try:
-                                    link_element = WebDriverWait(driver, 10).until(
-                                        EC.presence_of_element_located((By.CSS_SELECTOR, 'div > div > a.btn.btn_icon_detail'))
-                                    )
-                                    href = link_element.get_attribute('href')
-                                    match = re.search(r"searchLog\('web_song','SONG','SO','([^']+)','(\d+)'\);", href)
-                                    if match:
-                                        song_id = match.group(2)
-                                        print(f"Song ID: {song_id}")
-                                    else:
-                                        print(f"No song ID found in the link: {href}")
+                            # 곡 ID 추출 (JavaScript 함수의 파라미터에서 추출)
+                            link_element = row.select_one('td:nth-of-type(3) a.btn_icon_detail')
+                            if link_element:
+                                href = link_element['href']
+                                match = re.search(r"searchLog\('web_song','SONG','SO','([^']+)','(\d+)'\);", href)
+                                if match:
+                                    song_id = match.group(2)
+                                    print(f"Song ID: {song_id}")
+                                else:
+                                    print(f"No song ID found in the link: {href}")
 
-                                except Exception as e:
-                                    print(f"Error fetching song ID: {e}")
+                            # 아티스트 이름 추출
+                            artist_name_tag = row.select_one('td:nth-of-type(4) div > div')
+                            artist_name = artist_name_tag.text.strip() if artist_name_tag else None
+                            print(f"Song Name: {song_name}, Artist Name: {artist_name}")
 
-                                ## 아티스트 이름 추출
-                                td_with_artist = cells[3]
-                                artist_name = td_with_artist.find_element(By.CSS_SELECTOR, 'div > div')
-                                artist_name = artist_name.text
-                                print(f"Song Name: {song_name}, Artist Name: {artist_name}")
-
-                                ## 검색 결과에 추가
-                                if song_name and artist_name:
-                                    search_results.append((song_name, artist_name, song_id))
-                            except NoSuchElementException:
-                                print("Element not found")
-                                continue
-                            except Exception as e:
-                                print(f"Error fetching href: {e}")
-                                continue
-                    except Exception as e:
-                        print(f"Error fetching href: {e}")
-                        continue
+                            # 검색 결과에 추가
+                            if song_name and artist_name:
+                                search_results.append((song_name, artist_name, song_id))
+                        except Exception as e:
+                            print(f"Error fetching song info: {e}")
+                            continue
 
                     # 가장 유사한 검색 결과 찾기
                     best_match = self.find_highest_similarity_match(title, current_artist_name, search_results)
