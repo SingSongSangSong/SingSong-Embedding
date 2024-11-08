@@ -83,6 +83,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             self.db_password = os.getenv('DB_PASSWORD')
             self.db_database = os.getenv('DB_DATABASE')
             self.db_port = 3306
+            self.langchainAgent = LangChainServiceAgentGrpc()
         except Exception as e:
             logger.error(f"Initialization failed: {e}")
     
@@ -880,35 +881,33 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             logger.error(f"Failed to get song info: {e}")
             return None
 
-    # async def handle_features_with_agent(self, query:str, features: QueryType):
-    #     """
-    #     Handles queries with multiple features (genre, year, country, artist type, artist gender, etc.).
-    #     """
-    #     langchainService = LangChainServiceAgentGrpc()
-
-    #     try:
-    #         # Step 1: Extract the features from the query
-    #         song_name = features.song_name
-    #         artist_name = features.artist_name
-    #         genre = features.genre
-    #         year = features.year
-    #         country = features.country
-    #         octave = features.octave
-    #         vocal_range = features.vocal_range
-    #         situation = features.situation
-    #         country = features.country
-    #     except Exception as e:
-    #         logger.error(f"Failed to extract features: {e}")
-    #         return None, "특징을 추출하는 중 오류가 발생했습니다."
+    async def handle_features_with_agent(self, query:str, features: QueryType):
+        """
+        Handles queries with multiple features (genre, year, country, artist type, artist gender, etc.).
+        """
+        try:
+            # Step 1: Extract the features from the query
+            song_name = features.song_name
+            artist_name = features.artist_name
+            genre = features.genre
+            year = features.year
+            country = features.country
+            octave = features.octave
+            vocal_range = features.vocal_range
+            situation = features.situation
+            country = features.country
+        except Exception as e:
+            logger.error(f"Failed to extract features: {e}")
+            return None, "특징을 추출하는 중 오류가 발생했습니다."
     
-    #     try:
-    #         # Step 2: Prepare the query for the LangChain service
-    #         query = f"User Query: {query} \n Information extracted from query: \n Title : {song_name} Artist : {artist_name} Genre : {genre} Year : {year} Country : {country} Octave : {octave} VocalRange : {vocal_range} Situation : {situation}"
-    #         response = await langchainService.run(query)
-    #         song_info_ids = response.song_info_ids
-    #         message = response.message
-
-    #         return song_info_ids, message
+        try:
+            # Step 2: Prepare the query for the LangChain service
+            query = f"User Query: {query} \n Information extracted from query: \n Title : {song_name} Artist : {artist_name} Genre : {genre} Year : {year} Country : {country} Octave : {octave} VocalRange : {vocal_range} Situation : {situation}"
+            song_info_ids, reason_list = await self.langchainAgent.run(query)
+            return song_info_ids, reason_list
+        except Exception as e:
+            logger.error(f"Failed to handle features with agent: {e}")
+            return None, "특징을 처리하는 중 오류가 발생했습니다."
 
     async def run(self, query: str):
         """
@@ -949,12 +948,20 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 elif query_type == "year_gender_genre":
                     songInfos, message = await self.handle_year_gender_genre(Results.year, Results.gender, Results.genre, Results.country)
                     logging.info(f"song_info_ids from year gender genre query: {songInfos}")
-                # elif query_type == "None":
-                #     songInfos, message = await self.handle_features_with_agent(query, Results)
-                #     logging.info(f"song_info_ids from features query: {songInfos}")
                 else:
                     logging.info("No valid query type found")
-                    
+            
+                if songInfos is None or len(songInfos) == 0 or query_type == "None":
+                    songInfos, message = await self.handle_features_with_agent(query, Results)
+                    if songInfos is None:
+                        return {"songInfos": [], "message": "유사한 노래를 찾지 못했습니다."}
+                    elif len(songInfos) == 0:
+                        return {"songInfos": [], "message": "유사한 노래를 찾지 못했습니다."}
+                    elif len(songInfos) > 0:
+                        songInfos = await self.get_song_infos(songInfos)
+                        message = "싱송이의 AI 전체 검색 결과입니다."
+                    logging.info(f"song_info_ids from features query: {songInfos}")
+                        
             except Exception as e:
                 logger.error(f"Failed to determine query type: {e}")
                 return {"songInfos": [], "message": "유사한 노래를 찾지 못했습니다."}
