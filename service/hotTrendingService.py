@@ -233,7 +233,9 @@ class HotTrendingService:
                             s.album,
                             ss.gender,
                             ss.age_group,
-                            s.melon_song_id
+                            s.melon_song_id,
+                            s.lyrics_video_link,
+                            s.tj_youtube_link
                         FROM scored_songs ss
                         JOIN song_info s ON ss.song_info_id = s.song_info_id
                     """)
@@ -410,7 +412,9 @@ class HotTrendingService:
                                 s.album,
                                 ss.gender,
                                 ss.age_group,
-                                s.melon_song_id
+                                s.melon_song_id,
+                                s.lyrics_video_link,
+                                s.tj_youtube_link
                             FROM scored_songs ss
                             JOIN song_info s ON ss.song_info_id = s.song_info_id
                         """)
