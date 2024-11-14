@@ -65,4 +65,5 @@ class AgentPromptTemplate(StringPromptTemplate):
     Begin! Remember to provide 10 song recommendations and explain why each song is a good match in Korean. Additionally, you must ensure that the MR field is always false.
 
     Question: {input}
-    {agent_scratchpad}"""
+    {agent_scratchpad}
+"""

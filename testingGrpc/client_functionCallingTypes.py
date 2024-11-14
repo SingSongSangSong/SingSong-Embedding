@@ -15,7 +15,7 @@ def run():
         stub = FunctionCallingWithTypesRecommendStub(channel)
 
         prompts  = [
-            "우ㅏ루아ㅓㅗㄹ아ㅗ랑호ㅘ나나나나"
+            "쏜애플의 석류의맛이랑 비슷한 노래 추천해줘"
         ]
 
         # 테스트할 프롬프트 리스트
@@ -93,7 +93,7 @@ def run():
         # 각 프롬프트에 대해 서버에 요청 보내기
         for prompt in prompts:
             print(f"Sending request with prompt: {prompt}")
-            
+                        
             # LangchainRequest 생성
             request = FunctionCallingWithTypesRequest(
                 memberId=8,  # 예시로 memberId 8을 사용

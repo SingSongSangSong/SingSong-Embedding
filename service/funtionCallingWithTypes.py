@@ -51,10 +51,10 @@ situation_list = ['classics', 'ssum', 'breakup', 'carol', 'finale', 'dance', 'du
 genre_list = ["국악", "발라드", "록/메탈", "댄스", "성인가요/트로트", "포크/블루스", "키즈", "창작동요", "국내영화", "국내드라마", "랩/힙합", "R&B/Soul", "인디음악", "애니메이션/웹툰", "만화", "교과서동요", "국외영화", "POP", "클래식", "크로스오버", "J-POP", "CCM", "게임", "컨트리", "재즈", "보컬재즈", "포크", "블루스", "일렉트로니카", "월드뮤직", "애시드/퓨전/팝", "국내뮤지컬"]
 country_list = ["대한민국", "미국", "일본", "영국", "스웨덴", "캐나다", "아일랜드", "노르웨이", "독일", "덴마크", "콜롬비아", "브라질", "러시아", "바베이도스", "오스트레일리아", "프랑스", "쿠바", "스페인", "뉴질랜드", "자마이카", "말레이시아", "네덜란드", "푸에르토리코 연방", "나이지리아", "가나", "아르헨티나", "벨기에", "중국", "폴란드", "타이 왕국", "타이완"]
 
-
 class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServicer):
     def __init__(self):
         try:
+            # 동기적으로 초기화
             self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
             self.milvus_host = os.getenv("MILVUS_HOST", "milvus-standalone")
             self.collection_name = "final_song_embeddings"
@@ -83,7 +83,14 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             self.db_password = os.getenv('DB_PASSWORD')
             self.db_database = os.getenv('DB_DATABASE')
             self.db_port = 3306
+            self.langchainAgent = None
+        except Exception as e:
+            logger.error(f"Initialization failed: {e}")
+
+    async def initialize(self):
+        try:
             self.langchainAgent = LangChainServiceAgentGrpc()
+            await self.langchainAgent.initialize()
         except Exception as e:
             logger.error(f"Initialization failed: {e}")
     

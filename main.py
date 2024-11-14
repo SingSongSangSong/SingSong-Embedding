@@ -46,7 +46,11 @@ async def serve_grpc():
     # 서비스 추가
     add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), grpc_server)
     add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), grpc_server)
-    add_FunctionCallingWithTypesRecommendServicer_to_server(FunctionCallingWithTypesServiceGrpc(), grpc_server)
+
+    # FunctionCallingWithTypesServiceGrpc 인스턴스 생성 및 비동기 초기화
+    function_calling_with_types_service = FunctionCallingWithTypesServiceGrpc()
+    await function_calling_with_types_service.initialize()
+    add_FunctionCallingWithTypesRecommendServicer_to_server(function_calling_with_types_service, grpc_server)
 
     grpc_server.add_insecure_port('[::]:50051')
     await grpc_server.start()
