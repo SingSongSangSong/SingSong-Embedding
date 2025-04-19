@@ -15,37 +15,25 @@ from proto.langchainAgentRecommend.langchainAgentRecommend_pb2_grpc import Langc
 from langchain_community.cache import InMemoryCache
 from langchain.globals import set_llm_cache
 import time
+from dotenv import load_dotenv
+load_dotenv()
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class LangChainServiceAgentGrpc(LangchainAgentRecommendServicer):
-    def __init__(self):
+    def __init__(self, config, collection, embedding_model, retriever, vectorstore, llm):
         # Load API keys from environment
-        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-        self.milvus_host = os.getenv("MILVUS_HOST", "milvus-standalone")
-        self.collection_name = "final_song_embeddings"
-        connections.connect(alias="default", host=self.milvus_host, port="19530")
-        self.collection = Collection(self.collection_name)
-        # Define embedding model
-        self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
-        # Milvus vector store
-        self.vectorstore = Milvus(
-            embedding_function=self.embedding_model,
-            collection_name=self.collection_name,
-            connection_args={"host": self.milvus_host, "port": "19530"},
-            text_field="song_name"
-        )
-        self.retriever = self.vectorstore.as_retriever(search_kwargs={"k": 10})  # Max 10 results
-        # Initialize LLM model
-        self.llm = ChatOpenAI(
-            temperature=0.5,
-            max_tokens=4096,
-            model_name='gpt-4o-mini',
-            api_key=self.OPENAI_API_KEY
-        )
-        # Initialize and set the cache for the LLM
+        self.OPENAI_API_KEY = config["OPENAI_API_KEY"]
+        self.milvus_host = config["MILVUS_HOST"]
+        self.collection_name = config["COLLECTION_NAME"]
+        self.collection = collection
+        self.embedding_model = embedding_model
+        self.retriever = retriever
+        self.vectorstore = vectorstore
+        self.retriever = retriever
+        self.llm = llm
         self.llm_cache = InMemoryCache()
         set_llm_cache(self.llm_cache)
         

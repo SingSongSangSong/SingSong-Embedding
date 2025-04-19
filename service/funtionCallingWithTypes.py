@@ -16,7 +16,8 @@ from proto.functionCallingWithTypes.functionCallingWithTypes_pb2 import Function
 from proto.functionCallingWithTypes.functionCallingWithTypes_pb2_grpc import FunctionCallingWithTypesRecommendServicer
 from service.functionCallingPrompts import PromptsForFunctionCalling, ExtractCommonTraitService
 from service.langchainServiceAgentGrpc import LangChainServiceAgentGrpc
-
+from dotenv import load_dotenv
+load_dotenv()
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,59 +54,25 @@ country_list = ["대한민국", "미국", "일본", "영국", "스웨덴", "캐�
 
 
 class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServicer):
-    def __init__(self):
-        try:
-            self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-            self.milvus_host = os.getenv("MILVUS_HOST", "milvus-standalone")
-            self.collection_name = "final_song_embeddings"
-            connections.connect(alias="FunctionCallingTypesGrpc", host=self.milvus_host, port="19530")
-            self.collection = Collection(self.collection_name)
-            self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
-            self.openai = OpenAI(api_key=self.OPENAI_API_KEY)
-            self.asyncOpenai = AsyncOpenAI(api_key=self.OPENAI_API_KEY)
-            self.llm = ChatOpenAI(
-                temperature=0.5,
-                max_tokens=4096,
-                streaming=True,
-                callbacks=[StreamingStdOutCallbackHandler()],
-                model_name='gpt-4o-mini',
-                api_key=self.OPENAI_API_KEY
-            )
-            self.vectorstore = Milvus(
-                embedding_function=self.embedding_model,
-                collection_name=self.collection_name,
-                connection_args={"host": self.milvus_host, "port": "19530"},
-                text_field="song_name"
-            )
-            self.retriever = self.vectorstore.as_retriever()
-            self.db_host = os.getenv('DB_HOST')
-            self.db_user = os.getenv('DB_USER')
-            self.db_password = os.getenv('DB_PASSWORD')
-            self.db_database = os.getenv('DB_DATABASE')
-            self.db_port = 3306
-            self.langchainAgent = LangChainServiceAgentGrpc()
-        except Exception as e:
-            logger.error(f"Initialization failed: {e}")
-    
-    async def setup_db_config(self):
-        try:
-            # 비동기 MySQL 연결 설정
-            pool = await aiomysql.create_pool(
-                host=self.db_host,
-                user=self.db_user,
-                password=self.db_password,
-                db=self.db_database,
-                port=self.db_port,
-                charset='utf8mb4',
-                cursorclass=aiomysql.DictCursor,
-                autocommit=False  # 자동 커밋 설정
-            )
-            logger.info("DB 연결 성공")
-            return pool
+    def __init__(self, config, collection, embedding_model, openai_client, async_openai_client, retriever, llm, agent, pool, vectorstore):
+        self.OPENAI_API_KEY = config["OPENAI_API_KEY"]
+        self.milvus_host = config["MILVUS_HOST"]
+        self.collection_name = config["COLLECTION_NAME"]
+        self.db_host = config["DB_HOST"]
+        self.db_user = config["DB_USER"]
+        self.db_password = config["DB_PASSWORD"]
+        self.db_database = config["DB_DATABASE"]
+        self.db_port = config["DB_PORT"]
 
-        except aiomysql.MySQLError as e:
-            logger.error(f"MySQL 연결 실패: {e}")
-            raise
+        self.collection = collection
+        self.embedding_model = embedding_model
+        self.openai = openai_client
+        self.asyncOpenai = async_openai_client
+        self.retriever = retriever
+        self.llm = llm
+        self.langchainAgent = agent
+        self.db = pool
+        self.vectorstore = vectorstore
     
     async def determine_query_type(self, query: str):
         """
@@ -120,8 +87,10 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 response_format=QueryType,
             )
 
+            print(response)
             # Extract and return query type
             parsed_result = response.choices[0].message.parsed
+            print(parsed_result)
             query_type = parsed_result.query_type
             return query_type, parsed_result
         except Exception as e:
@@ -178,8 +147,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                 # Combine the retrieved document descriptions into one text block
                 tags = []
 
-                db = await self.setup_db_config()
-                async with db.acquire() as conn:
+                async with self.db.acquire() as conn:
                     async with conn.cursor() as cursor:
                         query = f"""
                             SELECT
@@ -262,7 +230,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     content += f"Situations:\n{' '.join(tags)}"
 
                 # Search With Milvus DB for Similar Songs in Two Way - 1. Using Artist Name 2. Using Features
-                async with db.acquire() as conn:
+                async with self.db.acquire() as conn:
                     async with conn.cursor() as cursor:
                         query = """
                             SELECT song_info_id
@@ -408,7 +376,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     gender_filter = f" AND artist_gender = '혼성'"
 
             # 데이터베이스 연결 및 쿼리 실행
-            pool = await self.setup_db_config()
+            pool = self.db
             async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     query = f"""
@@ -572,7 +540,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
                     found_artist_name = response[0].metadata.get("artist_name")
             
             # 데이터베이스 연결 및 쿼리 실행
-            pool = await self.setup_db_config()
+            pool = self.db
             async with pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # melon_likes 기준으로 상위 1500곡을 가져옴
@@ -622,7 +590,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             return None, "음역대 정보를 입력해주세요."
 
         try:
-            db = await self.setup_db_config()
+            db = self.db
             async with db.acquire() as conn:
                 async with conn.cursor() as cursor:
                     # Prepare the gender filter if gender is provided and valid
@@ -719,7 +687,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             remaining_songs = 20  # 남은 노래 수 초기화
 
             # 데이터베이스 연결
-            db = await self.setup_db_config()
+            db = self.db
 
             # 각 유효한 상황에 대해 노래를 검색
             async with db.acquire() as conn:
@@ -766,7 +734,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
             return None, "연도, 성별, 장르 정보를 입력해주세요."
 
         try:
-            db = await self.setup_db_config()
+            db = self.db
 
             # 기본 SQL 쿼리 시작 부분
             base_query = """
@@ -847,7 +815,7 @@ class FunctionCallingWithTypesServiceGrpc(FunctionCallingWithTypesRecommendServi
         Retrieves song information based on song_info_ids, sorted by melon_likes (default to 0 if missing).
         """
         try:
-            db = await self.setup_db_config()
+            db = self.db
             song_infos = []
 
             async with db.acquire() as conn:

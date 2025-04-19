@@ -15,7 +15,8 @@ import os
 from langchain_openai.chat_models import ChatOpenAI
 from langchain_core.callbacks import StreamingStdOutCallbackHandler
 from langchain_milvus import Milvus
-
+from dotenv import load_dotenv
+load_dotenv()
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -37,9 +38,8 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
     def __init__(self):
         try:
             self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-            self.milvus_host = os.getenv("MILVUS_HOST", "milvus-standalone")
-            self.collection_name = "singsongsangsong_22286"
-            connections.connect(alias="FunctionCallingGrpc", host=self.milvus_host, port="19530")
+            self.milvus_host = os.getenv("MILVUS_HOST", "192.168.45.50")
+            self.collection_name = "final_song_embeddings"
             self.collection = Collection(self.collection_name)
             self.embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
             self.openai = OpenAI(api_key=self.OPENAI_API_KEY)
@@ -61,6 +61,14 @@ class FunctionCallingServiceGrpc(functionCallingRecommendServicer):
             self.retriever = self.vectorstore.as_retriever()
         except Exception as e:
             logger.error(f"Initialization failed: {e}")
+    
+    async def init(self):
+        try:
+            connections.connect(alias="FunctionCallingGrpc", host=self.milvus_host, port="19530")
+            self.collection = Collection(self.collection_name, using="FunctionCallingGrpc")
+            logger.info("✅ Milvus collection loaded in FunctionCallingServiceGrpc")
+        except Exception as e:
+            logger.error(f"❌ Initialization failed: {e}")
     
     async def determine_query_type(self, query: str):
         """

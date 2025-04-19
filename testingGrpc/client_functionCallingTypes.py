@@ -1,5 +1,6 @@
 import sys
 import os
+import asyncio
 
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
@@ -8,14 +9,14 @@ from proto.functionCallingWithTypes.functionCallingWithTypes_pb2 import Function
 from proto.functionCallingWithTypes.functionCallingWithTypes_pb2_grpc import FunctionCallingWithTypesRecommendStub
 import time
 
-def run():
-    # gRPC 서버에 연결
-    with grpc.insecure_channel('localhost:50051') as channel:
-        # LangchainRecommendStub을 사용해 서버와 통신
+async def run():
+    async with grpc.aio.insecure_channel("localhost:50051") as channel:
         stub = FunctionCallingWithTypesRecommendStub(channel)
 
         prompts  = [
-            "우ㅏ루아ㅓㅗㄹ아ㅗ랑호ㅘ나나나나"
+            "30대 남자가 부르기 어려운 노래 추천해줘",
+            "2000년도부터 2010년 사이에 나온 노래 추천해줘",
+            "최고음 3옥타브레 인 노래 추천해줘"
         ]
 
         # 테스트할 프롬프트 리스트
@@ -103,16 +104,15 @@ def run():
             )
 
             # 서버에 요청을 보내고 응답 받기
-            response = stub.GetFunctionCallingWithTypesRecommendation(request)
+            response = await stub.GetFunctionCallingWithTypesRecommendation(request)
 
-            # 응답 처리
-            print("Received Langchain Recommendation for prompt:")
-            print(f"Prompt: {prompt}")
-            for item in response.songInfos:
-                print(f"Song Info ID: {str(item)}\n")
-
-            # 테스트 사이에 잠시 대기 (필요에 따라 시간 조절)
-            time.sleep(1)
+            try:
+                response = await stub.GetFunctionCallingWithTypesRecommendation(request)
+                print("🎵 Response Message:", response.message)
+                for song in response.songInfos:
+                    print(f"- {song.songName} by {song.artistName} ({song.songNumber})")
+            except grpc.aio.AioRpcError as e:
+                print(f"gRPC error: {e.code()} - {e.details()}")
 
 if __name__ == "__main__":
-    run()
+    asyncio.run(run())

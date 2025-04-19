@@ -2,51 +2,100 @@ import grpc
 import logging
 import asyncio
 import signal
-from ddtrace import tracer
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 비동기 스케줄러
-from service.userProfileService import UserProfileService
-from service.userProfileServiceGrpc import UserProfileServiceGrpc
-from service.functionCallingServiceGrpc import FunctionCallingServiceGrpc
+import aiomysql
+# from ddtrace import tracer
+# from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 비동기 스케줄러
 from service.funtionCallingWithTypes import FunctionCallingWithTypesServiceGrpc
-from proto.userProfileRecommend.userProfileRecommend_pb2_grpc import add_UserProfileServicer_to_server
-from proto.functionCallingRecommend.functionCallingRecommend_pb2_grpc import add_functionCallingRecommendServicer_to_server
 from proto.functionCallingWithTypes.functionCallingWithTypes_pb2_grpc import add_FunctionCallingWithTypesRecommendServicer_to_server
-from service.hotTrendingService import HotTrendingService
-from service.tjCrawlingService import TJCrawlingService
+from dotenv import load_dotenv
+import os
+from pydantic import BaseModel
+from openai import OpenAI, AsyncOpenAI
+from pymilvus import Collection, connections
+from langchain_openai.chat_models import ChatOpenAI
+from langchain_core.callbacks import StreamingStdOutCallbackHandler
+from langchain_milvus import Milvus
+from langchain_openai import OpenAIEmbeddings
+from service.langchainServiceAgentGrpc import LangChainServiceAgentGrpc
+
+
+load_dotenv()  # .env 로딩
+
+# 환경변수 수동 주입
+config = {
+    "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+    "MILVUS_HOST": os.getenv("MILVUS_HOST"),
+    "DB_HOST": os.getenv("DB_HOST"),
+    "DB_USER": os.getenv("DB_USER"),
+    "DB_PASSWORD": os.getenv("DB_PASSWORD"),
+    "DB_DATABASE": os.getenv("DB_DATABASE"),
+    "DB_PORT": int(os.getenv("DB_PORT", 30007)),
+    "COLLECTION_NAME": "final_song_embeddings"
+}
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# 전역 변수 초기화
-user_profile_service = UserProfileService()
-hot_trending_service = HotTrendingService()
-crawling_service = TJCrawlingService()
 
-# 전역 스케줄러와 서버 참조
-scheduler = None
 grpc_server = None
 
-# 동기 작업을 비동기적으로 실행
-async def user_profile_job():
-    logger.info("Running user profile creation process.")
-    await user_profile_service.run()
-    logger.info("User profile creation process finished.")
+async def setup_db_config():
+    try:
+        # 비동기 MySQL 연결 설정
+        pool = await aiomysql.create_pool(
+            host=config["DB_HOST"],
+            user=config["DB_USER"],
+            password=config["DB_PASSWORD"],
+            db=config["DB_DATABASE"],
+            port=config["DB_PORT"],
+            charset='utf8mb4',
+            cursorclass=aiomysql.DictCursor,
+            autocommit=False  # 자동 커밋 설정
+        )
+        logger.info("DB 연결 성공")
+        return pool
 
-async def hot_trending_job():
-    logger.info("Running hot trending job.")
-    await hot_trending_service.v2_scheduler()
-    logger.info("Hot trending job completed.")
+    except aiomysql.MySQLError as e:
+        logger.error(f"MySQL 연결 실패: {e}")
+        raise
+
 
 # gRPC 서버 실행
 async def serve_grpc():
     global grpc_server
     grpc_server = grpc.aio.server()  # 비동기 gRPC 서버 생성
 
-    # 서비스 추가
-    add_UserProfileServicer_to_server(UserProfileServiceGrpc(user_profile_service), grpc_server)
-    add_functionCallingRecommendServicer_to_server(FunctionCallingServiceGrpc(), grpc_server)
-    add_FunctionCallingWithTypesRecommendServicer_to_server(FunctionCallingWithTypesServiceGrpc(), grpc_server)
+    # Milvus 연결
+    connections.connect(alias="default", host=config["MILVUS_HOST"], port="19530")
+    milvus_collection = Collection(config["COLLECTION_NAME"])  # 연결 후 컬렉션 인스턴스 생성
+    # Embedding 모델 & OpenAI 객체
+    embedding_model = OpenAIEmbeddings(model="text-embedding-3-large")
+    openai_client = OpenAI(api_key=config["OPENAI_API_KEY"])
+    async_openai_client = AsyncOpenAI(api_key=config["OPENAI_API_KEY"])
+    llm = ChatOpenAI(
+            temperature=0.5,
+            max_tokens=4096,
+            streaming=True,
+            callbacks=[StreamingStdOutCallbackHandler()],
+            model_name='gpt-4o-mini',
+            api_key=config["OPENAI_API_KEY"]
+        )
+    vectorstore = Milvus(
+            embedding_function=embedding_model,
+            collection_name=config["COLLECTION_NAME"],
+            connection_args={"host": config["MILVUS_HOST"], "port": "19530"},
+            text_field="song_name"
+        )
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 10})  # Max 10 results
+
+    pool = await setup_db_config()  # DB 설정 비동기 초기화
+
+    # 다른 서비스도 동일하게 처리
+    langchainAgent = LangChainServiceAgentGrpc(config, milvus_collection, embedding_model, retriever, vectorstore, llm)
+    service = FunctionCallingWithTypesServiceGrpc(config, milvus_collection, embedding_model, openai_client, async_openai_client, retriever, llm, langchainAgent, pool, vectorstore=vectorstore)
+
+    add_FunctionCallingWithTypesRecommendServicer_to_server(service, grpc_server)
 
     grpc_server.add_insecure_port('[::]:50051')
     await grpc_server.start()
@@ -54,14 +103,9 @@ async def serve_grpc():
 
 # Graceful Shutdown 핸들러
 async def shutdown():
-    global scheduler, grpc_server
+    global grpc_server
 
     logger.info("Shutting down gracefully...")
-
-    # 스케줄러 중지
-    if scheduler:
-        scheduler.shutdown(wait=False)
-        logger.info("Scheduler stopped.")
 
     # gRPC 서버 중지
     if grpc_server:
@@ -80,20 +124,7 @@ def register_signal_handlers(loop):
 
 # 비동기 메인 함수
 async def main():
-    global scheduler
-
-    tracer.configure(port=8126, https=False)
-
-    # HotTrendingService 및 크롤링 서비스 초기화
-    await hot_trending_service.v2_init()
-
-    # 비동기 스케줄러 설정 및 시작
-    scheduler = AsyncIOScheduler(timezone='Asia/Seoul')
-    scheduler.add_job(hot_trending_job, 'cron', minute='50', id='hot_trending_scheduler')
-    scheduler.add_job(user_profile_job, 'cron', hour='03', minute='55', id='user_profile_scheduler')
-    scheduler.add_job(crawling_service.crawl_and_save_new_songs, 'cron', hour='11', minute='0', id='daily_new_song_scheduler')
-    scheduler.start()
-    logger.info("Background scheduler started")
+    # tracer.configure(port=8126, https=False)
 
     # gRPC 서버 시작
     await serve_grpc()

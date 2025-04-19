@@ -3,7 +3,7 @@ name: Dockerizing, Pushing to ECR, and Deploying to ECS
 on:
   push:
     branches:
-      - main
+      - develop
 
 jobs:
   build-and-deploy:
